@@ -16,8 +16,12 @@ NamedOutputs dequantize_linear(const NodeContext& node) {
     const auto zero_point = node.get_input("ZeroPoint");
 
     // assert shape of scale and zero_point
+    PADDLE_OP_CHECK(node, scale.get_partial_shape().rank().is_static(), "dequantize: scale rank must be static!");
+    PADDLE_OP_CHECK(node,
+                    zero_point.get_partial_shape().rank().is_static(),
+                    "dequantize: zero_point rank must be static!");
     const auto& scale_shape = scale.get_partial_shape();
-    const auto& scale_shape_length = scale.get_partial_shape().rank().get_length();
+    const auto& scale_shape_length = scale_shape.rank().get_length();
 
     if (scale_shape_length == 1) {
         PADDLE_OP_CHECK(node,

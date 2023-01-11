@@ -33,7 +33,15 @@ NamedOutputs quantize_linear(const NodeContext& node) {
     const auto x = node.get_input("X");
     const auto scale = node.get_input("Scale");
     const auto zero_point = node.get_input("ZeroPoint");
-
+    const auto quant_axis = node.get_attribute<int32_t>("quant_axis");
+    std::vector<int32_t> quant_axis_range{-1};
+    PADDLE_OP_CHECK(node,
+                    std::any_of(quant_axis_range.begin(),
+                                quant_axis_range.end(),
+                                [&quant_axis](int32_t value) {
+                                    return quant_axis == value;
+                                }),
+                    "quantize_linear quant_axis is NOT in the range of [-1].");
     // extract the ATTRIBUTES
     const auto bit_length = node.get_attribute<int32_t>("bit_length");
     const auto range = (1 << (bit_length - 1)) - 1;

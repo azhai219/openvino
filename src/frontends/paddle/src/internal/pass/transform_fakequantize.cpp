@@ -32,14 +32,14 @@ using namespace ov::frontend::paddle::op;
     |  quantize_linear |  -->   |                                      v
     |                  |        |                                +-----------+
     +------------------+        |                                |   Round   |
-                                 \                               +-----------+                  |   |   |   |
-                                                                       |                        v   v   v   v
-                                                                       v                    +-------------------+
-                                 /                               +-----------+              |                   |
-                                |                                |   Clamp   |     === >    |   FakeQuantize    |
+                                |                                +-----------+                  |   |   |   |
+                                |                                      |                        v   v   v   v
+                                |                                      v                    +-------------------+
                                 |                                +-----------+              |                   |
-                                |                                      |                    +-------------------+
-                                |                                      v                        |   |   |   |
+                                |                                |   Clamp   |     === >    |   FakeQuantize    |
+                                 \                               +-----------+              |                   |
+                                                                       |                    +-------------------+
+                                 /                                     v                        |   |   |   |
      +------------------+       |                                +-----------+                  v   v   v   v
      |                  |       |                                |  Convert  |
      |dequantize_linear |  -->  |                                +-----------+
@@ -95,13 +95,12 @@ ov::frontend::paddle::pass::TransformFakeQuantize::TransformFakeQuantize() {
         const auto scale = scales[0];
         const auto scale_low = scale * low_range / high_range;
         const auto scale_high = scale;
-        const auto input_clamp = std::make_shared<Clamp>(input_item, scale_low, scale_high);
         const auto input_low = std::make_shared<Constant>(element::f32, Shape{1}, scale_low);
         const auto input_high = std::make_shared<Constant>(element::f32, Shape{1}, scale_high);
         const auto output_low = std::make_shared<Constant>(element::f32, Shape{1}, scale_low);
         const auto output_high = std::make_shared<Constant>(element::f32, Shape{1}, scale_high);
         auto fake_node =
-            std::make_shared<FakeQuantize>(input_clamp, input_low, input_high, output_low, output_high, levels);
+            std::make_shared<FakeQuantize>(input_item, input_low, input_high, output_low, output_high, levels);
         fake_node->set_friendly_name(output_node->get_friendly_name());
         replace_node(output_node, fake_node);
         return true;

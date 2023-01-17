@@ -27,6 +27,7 @@
 #include "paddle_utils.hpp"
 #include "place.hpp"
 #include "so_extension.hpp"
+#include "openvino/core/graph_util.hpp"
 
 using namespace ov::frontend::paddle::op::default_opset;
 using namespace ov;
@@ -445,6 +446,7 @@ std::shared_ptr<ov::Model> FrontEnd::convert(const InputModel::Ptr& model) const
 
     fuse_fakequantize_ops(f);
     try_remove_internal_ops(f);
+    serialize(f[0], "graph.xml", "graph.bin");
     return f[0];
 }
 
@@ -493,6 +495,7 @@ std::shared_ptr<ov::Model> FrontEnd::convert_partially(const InputModel::Ptr& mo
     fuse_fakequantize_ops(f);
     try_remove_internal_ops(f);
 
+    serialize(f[0], "graph.xml", "graph.bin");
     return f[0];
 }
 

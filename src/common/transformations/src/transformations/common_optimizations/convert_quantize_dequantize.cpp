@@ -67,7 +67,7 @@ ov::pass::ConvertQuantizeDequantize::ConvertQuantizeDequantize() {
         {data_pattern, input_low_pattern, input_high_pattern, output_low_pattern, output_high_pattern});
     auto convert1_pattern =
         ngraph::pattern::wrap_type<opset4::Convert>({fq_pattern},
-                                                    pattern::type_matches_any({element::i8, element::u8}));
+                                                    pattern::type_matches_any({element::i8, element::u8, element::f32}));
     auto convert2_pattern =
         ngraph::pattern::wrap_type<opset4::Convert>({convert1_pattern}, pattern::type_matches(element::f32));
     auto zero_point_pattern = pass::pattern::any_input();
@@ -129,6 +129,10 @@ ov::pass::ConvertQuantizeDequantize::ConvertQuantizeDequantize() {
             break;
         case element::Type_t::u8:
             if (out_low_val != 0 || out_high_val != 255)
+                return false;
+            break;
+        case element::Type_t::f32:
+            if (out_low_val != -128 || out_high_val != 127)
                 return false;
             break;
         default:

@@ -44,6 +44,7 @@ NamedOutputs quantize_linear(const NodeContext& node) {
                     "quantize_linear quant_axis is NOT in the range of [-1].");
     // extract the ATTRIBUTES
     const auto bit_length = node.get_attribute<int32_t>("bit_length");
+    const auto levels = 1 << bit_length;
     const auto range = (1 << (bit_length - 1)) - 1;
     const auto high_range = (1 << (bit_length - 1)) - 1;
     const auto low_range = -(1 << (bit_length - 1));
@@ -59,11 +60,25 @@ NamedOutputs quantize_linear(const NodeContext& node) {
         }
     }();
 
+    const auto zp_node = std::make_shared<default_opset::Convert>(zero_point, element::f32);
     const auto range_node = std::make_shared<default_opset::Constant>(element::f32, Shape{1}, (1.0 / range));
     const auto real_scale = std::make_shared<default_opset::Multiply>(scale, range_node);
-    const auto q_div_node = std::make_shared<default_opset::Divide>(x, real_scale);
-    const auto q_round_node = std::make_shared<default_opset::Round>(q_div_node, round_mode);
-    const auto q_node = std::make_shared<default_opset::Clamp>(q_round_node, low_range, high_range);
+
+    // like onnx
+    const auto output_low = std::make_shared<default_opset::Constant>(element::f32, Shape{1}, -128);
+    const auto output_high = std::make_shared<default_opset::Constant>(element::f32, Shape{1}, 127);
+
+    const auto input_low = std::make_shared<default_opset::Multiply>(real_scale,
+                                    std::make_shared<default_opset::Subtract>(output_low, zp_node));
+
+    const auto input_high = std::make_shared<default_opset::Multiply>(real_scale,
+                                    std::make_shared<default_opset::Subtract>(output_high, zp_node));
+
+    const auto q_node = std::make_shared<default_opset::Convert>(
+            std::make_shared<default_opset::FakeQuantize>(x, input_low, input_high, output_low, output_high, levels), element::f32);
+    // const auto q_div_node = std::make_shared<default_opset::Divide>(x, real_scale);
+    // const auto q_round_node = std::make_shared<default_opset::Round>(q_div_node, round_mode);
+    // const auto q_node = std::make_shared<default_opset::Clamp>(q_round_node, low_range, high_range);
     return node.default_single_output_mapping({q_node}, {"Y"});
 }
 

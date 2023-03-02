@@ -9,6 +9,7 @@
 #include "input.h"
 #include <ngraph/opsets/opset1.hpp>
 
+#include <utils/shape_inference/shape_inference_ngraph.hpp>
 #include <string>
 
 using namespace dnnl;
@@ -37,9 +38,271 @@ bool StridedSlice::isSupportedOperation(const std::shared_ptr<const ov::Node>& o
     }
     return true;
 }
+int distance(int startIdx, int stopIdx, const int& step_val, const int& len);
+
+inline int calculate_output_shape(const int& startIdx, const int& stopIdx, const int& step, const int& len) {
+    auto start = (startIdx > len - 1) ? len - 1 : ((startIdx % len + len) % len);
+    auto stop = (stopIdx > len - 1)   ? len     : ((stopIdx % len + len) % len);
+
+    return (stop - start + step - 1) / step;
+}
+class StridedSliceShapeInfer : public ShapeInferEmptyPads {
+public:
+    StridedSliceShapeInfer(const std::shared_ptr<ov::Node>& op,
+                           const IShapeInfer::port_mask_t& port_mask,
+                           const std::vector<int64_t>& begin_mask,
+                           const std::vector<int64_t>& end_mask,
+                           const std::vector<int64_t>& new_axis_mask,
+                           const std::vector<int64_t>& shrink_axis_mask,
+                           const std::vector<int64_t>& ellipsis_mask
+                           )
+    : m_op(op), m_port_mask(port_mask),
+      m_begin_mask(begin_mask), m_end_mask(end_mask), m_new_axis_mask(new_axis_mask), m_shrink_axis_mask(shrink_axis_mask), m_ellipsis_mask(ellipsis_mask) {
+        auto vec_to_set = [](const std::vector<int64_t>& vec, std::set<int64_t>& set){
+            for (auto i=0; i<vec.size(); ++i) {
+                if (vec[i] == 1) {
+                    set.emplace(i);
+                }
+            }
+        };
+        auto vec_to_val = [](const std::vector<int64_t>& vec, int64_t& value) {
+            auto iter = std::find(vec.begin(), vec.end(), 1);
+            if (iter != vec.end()) {
+                value = std::distance(vec.begin(),iter);
+            } else {
+                value = -1;
+            }
+        };
+        vec_to_set(begin_mask, m_begin_mask_set);
+        vec_to_set(end_mask, m_end_mask_set);
+        vec_to_set(new_axis_mask, m_new_axis_mask_set);
+        vec_to_set(shrink_axis_mask, m_shrink_axis_mask_set);
+        vec_to_val(ellipsis_mask, m_ellipsis_mask_val);
+        m_outputShape = VectorDims(m_op->get_output_partial_shape(0).rank().get_length(), 1);
+      }
+    std::vector<VectorDims> infer(
+        const std::vector<std::reference_wrapper<const VectorDims>>& input_shapes,
+        const std::unordered_map<size_t, MemoryPtr>& data_dependency) override {
+        const VectorDims& shapeIn = input_shapes[0].get();
+        const VectorDims& shapeBegin = input_shapes[1].get();
+        // const VectorDims& shapeEnd = input_shapes[2].get();
+        // const VectorDims& shapeStride = input_shapes[3].get();
+        auto beginPtr = reinterpret_cast<int *>(data_dependency.at(1)->GetPtr());
+        auto endPtr = reinterpret_cast<int *>(data_dependency.at(2)->GetPtr());
+        auto stridePtr = reinterpret_cast<int *>(data_dependency.at(3)->GetPtr());
+
+        for (auto i=0, new_idx=0; i<shapeIn.size(); ++i) {
+            bool is_new_axis = m_new_axis_mask_set.count(i);
+            bool is_shrink_axis = m_shrink_axis_mask_set.count(i);
+            bool is_begin_axis = m_begin_mask_set.count(i);
+            bool is_end_axis = m_end_mask_set.count(i);
+            
+            if (is_new_axis) {
+                m_outputShape[new_idx] = 1;
+                m_outputShape[new_idx+1] = shapeIn[i];
+                new_idx+=2;
+                continue;
+            }
+            if (is_shrink_axis) {
+                continue;
+            }
+            if (i<shapeBegin[0]) {
+                auto begin = is_begin_axis? 0 : beginPtr[i];
+                auto end  = is_end_axis? shapeIn[i] : endPtr[i];
+                m_outputShape[new_idx] = calculate_output_shape(begin, end, stridePtr[i], shapeIn[i]);
+            } else {
+                m_outputShape[new_idx] = shapeIn[i];
+            }
+            new_idx += 1;
+        }
+        return {m_outputShape};
+    }
+    port_mask_t get_port_mask() const override {
+        return m_port_mask;
+    }
+private:
+    VectorDims m_outputShape;
+    const std::shared_ptr<ov::Node> m_op;
+    const IShapeInfer::port_mask_t m_port_mask;
+    std::vector<int> m_begin;
+    std::vector<int> m_end;
+    std::vector<int> m_stride;
+    // mask
+    std::vector<int64_t> m_begin_mask;
+    std::vector<int64_t> m_end_mask;
+    std::vector<int64_t> m_new_axis_mask;
+    std::vector<int64_t> m_shrink_axis_mask;
+    std::vector<int64_t> m_ellipsis_mask;
+    // set
+    std::set<int64_t> m_begin_mask_set;
+    std::set<int64_t> m_end_mask_set;
+    std::set<int64_t> m_new_axis_mask_set;
+    std::set<int64_t> m_shrink_axis_mask_set;
+    std::set<int64_t> m_ellipsis_mask_set;
+    int64_t m_ellipsis_mask_val;
+};
+
+int distance(int startIdx, int stopIdx, const int& step_val, const int& len) {
+    // for start
+    if (startIdx > len - 1) {
+        startIdx = len - 1;
+    } else if (startIdx >= 0) {
+        startIdx = startIdx;
+    } else if (startIdx >= -len) {
+        startIdx += len;
+    } else {
+        startIdx = 0;
+    }
+
+    // for stop
+    if (stopIdx > len - 1) {
+        stopIdx = len;
+    } else if (stopIdx >= 0) {
+        stopIdx = stopIdx;
+    } else if (stopIdx >= -len) {
+        stopIdx += len;
+    } else {
+        stopIdx = 0;
+    }
+
+    return (stopIdx - startIdx + step_val - 1) / step_val;
+}
+/*
+    normalize the index to the range of [0, 1, ... len-1, len]
+                 +---+---+---+---+---+---+
+                 | 0 | 1 | 2 | 3 | 4 | 5 |
+                 +---+---+---+---+---+---+
+    pos:           0   1   2   3   4   5   6   7 ... 
+    neg:  -8  -7  -6  -5  -4  -3  -2  -1
+*/
+inline int normalize_index(int idx, const size_t& len) {
+    return (idx + len) % len;
+    if (idx >= len) {
+        idx = len - 1;
+    }
+    if (idx <= -len) {
+        idx = 0;
+    }
+    // if (idx >= 0) {
+    //     if (idx < len) {
+    //         return idx;
+    //     } else {
+    //         idx = len - 1;
+    //     }
+    // } else {
+    //     if (idx >= -len) {
+    //         idx += len;
+    //     } else {
+    //         idx = 0;
+    //     }
+    // }
+    // return idx;
+} 
+class SliceShapeInfer : public ShapeInferEmptyPads {
+public:
+    SliceShapeInfer(const std::shared_ptr<ov::Node>& op, const IShapeInfer::port_mask_t& port_mask,
+                    const std::vector<int>& start,
+                    const std::vector<int>& stop,
+                    const std::vector<int>& step,
+                    const std::vector<int>& axes) 
+    : m_op(op), m_port_mask(port_mask), m_start(start), m_stop(stop), m_step(step), m_axes(axes) {}
+
+    std::vector<VectorDims> infer(
+        const std::vector<std::reference_wrapper<const VectorDims>>& input_shapes,
+        const std::unordered_map<size_t, MemoryPtr>& data_dependency) override {
+        // m_outputShape = VectorDims(m_op->get_output_partial_shape(0).rank().get_length(), 1);
+        // m_axes = VectorDims(m_op->get_output_partial_shape(0).rank().get_length(), 1);
+        const VectorDims& shapeIn = input_shapes[0].get();
+        // const VectorDims& shapeStart = input_shapes[1].get();
+        // const VectorDims& shapeStop = input_shapes[2].get();
+        // const VectorDims& shapeStep = input_shapes[3].get();
+        // const VectorDims& shapeAxes = input_shapes[4].get();
+        const auto shapeInRanks = shapeIn.size();
+        m_outputShape = shapeIn;
+        for (auto i =0; i < m_axes.size(); ++i) {
+            auto idx = m_axes[i] < 0 ? m_axes[i] + shapeInRanks : m_axes[i];
+            const auto start_pos = normalize_index(m_start[i], shapeIn[idx]);
+            const auto stop_pos = normalize_index(m_stop[i], shapeIn[idx]);
+            const auto step_val = std::abs(static_cast<int>(m_step[i]));
+            m_outputShape[idx] = distance(m_start[i], m_stop[i], step_val, shapeIn[idx]);
+            // if (step_val == 1) {
+            //     m_outputShape[idx] = stop_pos - start_pos;
+            // } else {
+            //     m_outputShape[idx] = (stop_pos - start_pos + 1) / step_val;
+            // }
+        }
+        return {m_outputShape};
+    }
+
+    port_mask_t get_port_mask() const override {
+        return m_port_mask;
+    }
+private:
+    const std::shared_ptr<ov::Node> m_op;
+    const IShapeInfer::port_mask_t m_port_mask;
+    VectorDims m_outputShape;
+    std::vector<int> m_start;
+    std::vector<int> m_stop;
+    std::vector<int> m_step; 
+    std::vector<int> m_axes;
+};
+
+class StridedSliceShapeInferFactory : public ShapeInferFactory {
+public:
+    StridedSliceShapeInferFactory(const std::shared_ptr<ov::Node>& op, const IShapeInfer::port_mask_t& port_mask)
+    : m_op(op), m_port_mask(port_mask) {}
+    ShapeInferPtr makeShapeInfer() const override {
+        if (const auto Slice_op = ov::as_type_ptr<const ov::op::v8::Slice>(m_op)) {
+            return std::make_shared<NgraphShapeInfer>(make_shape_inference(m_op), m_port_mask);
+            // return std::make_shared<SliceShapeInfer>(m_op, m_port_mask);
+            // std::vector<int> start_vec;
+            // if (auto constStart = ov::as_type_ptr<const ov::op::v0::Constant>(Slice_op->get_input_node_shared_ptr(1))) {
+            //     start_vec = constStart->cast_vector<int>();
+            // }
+
+            // std::vector<int> stop_vec;
+            // if (auto constStop = ov::as_type_ptr<const ov::op::v0::Constant>(Slice_op->get_input_node_shared_ptr(2))) {
+            //     stop_vec = constStop->cast_vector<int>();
+            // }
+
+            // std::vector<int> step_vec;
+            // if (auto constStep = ov::as_type_ptr<const ov::op::v0::Constant>(Slice_op->get_input_node_shared_ptr(3))) {
+            //     step_vec = constStep->cast_vector<int>();
+            // }
+
+            // std::vector<int> axes_vec;
+            // if (auto constAxes = ov::as_type_ptr<const ov::op::v0::Constant>(Slice_op->get_input_node_shared_ptr(4))) {
+            //     axes_vec = constAxes->cast_vector<int>();
+            // } else {
+            //     axes_vec.resize(start_vec.size()); 
+            //     std::iota(axes_vec.begin(), axes_vec.end(), 0);
+            // }
+            // return std::make_shared<SliceShapeInfer>(m_op, m_port_mask, start_vec, stop_vec, step_vec, axes_vec);
+        } else if (const auto StridedSlice_op = ov::as_type_ptr<const ov::op::v1::StridedSlice>(m_op)) {
+            const auto ellipsis_mask = StridedSlice_op->get_ellipsis_mask();
+            if (std::count(ellipsis_mask.begin(), ellipsis_mask.end(), 1)) {
+                return std::make_shared<NgraphShapeInfer>(make_shape_inference(m_op), m_port_mask);
+            } else {
+                const auto begin_mask = StridedSlice_op->get_begin_mask();
+                const auto end_mask = StridedSlice_op->get_end_mask();
+                const auto new_axis_mask = StridedSlice_op->get_new_axis_mask();
+                const auto shrink_axis_mask = StridedSlice_op->get_shrink_axis_mask();
+                return std::make_shared<StridedSliceShapeInfer>(
+                    m_op, m_port_mask, begin_mask, end_mask, new_axis_mask, shrink_axis_mask, ellipsis_mask);
+            
+            }
+        } else {
+            IE_THROW(NotImplemented) << "not Slice or StridedSlice";
+        }
+    }
+private:
+    const std::shared_ptr<ov::Node> m_op;
+    const IShapeInfer::port_mask_t m_port_mask;
+};
 
 StridedSlice::StridedSlice(const std::shared_ptr<ov::Node>& op, const GraphContext::CPtr context) :
-        Node(op, context, NgraphShapeInferFactory(op, PortMask(1, 2, 3, 4))) {
+        // Node(op, context, NgraphShapeInferFactory(op, PortMask(1, 2, 3, 4))) {
+        Node(op, context, StridedSliceShapeInferFactory(op, PortMask(1, 2, 3, 4))) {
     std::string errorMessage;
     if (!isSupportedOperation(op, errorMessage)) {
         IE_THROW(NotImplemented) << errorMessage;

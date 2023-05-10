@@ -32,24 +32,31 @@ void regclass_frontend_FrontEnd(py::module m) {
 
     fem.def(
         "load",
-        [](FrontEnd& self, const py::object& py_obj) {
-            if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path")) ||
-                py::isinstance<py::str>(py_obj) || py::isinstance<py::bytes>(py_obj)) {
+        [](FrontEnd& self, const py::object& model_obj, const py::object& weight_obj) {
+            if (py::isinstance(model_obj, py::module_::import("pathlib").attr("Path")) ||
+                py::isinstance<py::str>(model_obj) || py::isinstance<py::bytes>(model_obj)) {
                 // check if model path is either a string/pathlib.Path/bytes
-                std::string model_path = Common::utils::convert_path_to_string(py_obj);
+                std::string model_path = Common::utils::convert_path_to_string(model_obj);
                 return self.load(model_path);
-            } else if (py::isinstance(py_obj, pybind11::module::import("io").attr("BytesIO"))) {
+            } else if (py::isinstance(model_obj, pybind11::module::import("io").attr("BytesIO"))) {
                 // support of BytesIO
-                py::buffer_info info = py::buffer(py_obj.attr("getbuffer")()).request();
+                py::buffer_info info = py::buffer(model_obj.attr("getbuffer")()).request();
                 MemoryBuffer mb(reinterpret_cast<char*>(info.ptr), info.size);
                 std::istream _istream(&mb);
+                if (!py::isinstance<py::none>(weight_obj)) {
+                    py::buffer_info w_info = py::buffer(weight_obj.attr("getbuffer")()).request();
+                    MemoryBuffer w_mb(reinterpret_cast<char*>(w_info.ptr), w_info.size);
+                    std::istream _w_istream(&w_mb);
+                    return self.load({&_istream, &_w_istream});
+                }
                 return self.load(&_istream);
             } else {
                 // Extended for one argument only for this time
-                return self.load({Common::utils::py_object_to_any(py_obj)});
+                return self.load({Common::utils::py_object_to_any(model_obj)});
             }
         },
-        py::arg("path"),
+        py::arg("model"),
+        py::arg("weights") = py::none(),
         R"(
                 Loads an input model.
 

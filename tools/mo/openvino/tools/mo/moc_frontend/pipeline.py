@@ -30,11 +30,13 @@ def moc_pipeline(argv: argparse.Namespace, moc_front_end: FrontEnd):
     :param: moc_front_end: Loaded Frontend for converting input model
     :return: converted nGraph function ready for serialization
     """
-    if isinstance(argv.input_model, io.BytesIO):
+    if isinstance(argv.input_model, io.BytesIO) and moc_front_end.get_name() == "onnx":
         raise Exception("ONNX frontend does not support input model as BytesIO object. "
                         "Please use use_legacy_frontend=True to convert the model.")
     else:
-        if argv.input_model:
+        if argv.input_model and argv.input_checkpoint:
+            input_model = moc_front_end.load(argv.input_model, argv.input_checkpoint)
+        elif argv.input_model:
             input_model = moc_front_end.load(argv.input_model)
         elif argv.saved_model_dir:
             input_model = moc_front_end.load(argv.saved_model_dir)

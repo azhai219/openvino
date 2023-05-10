@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import io
 import os
 import sys
 import tempfile
@@ -15,6 +16,8 @@ def convert_paddle_to_pdmodel(model, inputs=None, outputs=None):
     model_name = None
     tmp = tempfile.NamedTemporaryFile(delete=True)
     model_name = tmp.name
+    model_file = "{}.pdmodel".format(model_name)
+    param_file = "{}.pdiparams".format(model_name)
     try:
         import paddle
         if isinstance(model, paddle.hapi.model.Model):
@@ -38,12 +41,26 @@ def convert_paddle_to_pdmodel(model, inputs=None, outputs=None):
                     "Conversion just support paddle.hapi.model.Model, paddle.fluid.dygraph.layers.Layer and paddle.fluid.executor.Executor"
                 )
 
-        model_file = "{}.pdmodel".format(model_name)
         if not os.path.exists(model_file):
             print("Failed generating paddle inference format model")
             sys.exit(1)
+        
+        model_io = None
+        with open(model_file, 'rb') as file:
+            model_io = io.BytesIO(file.read())
 
-        return model_file
+        param_io = None
+        if not os.path.exists(param_file):
+            print("No weight in this model")
+        else:
+            with open(param_file, 'rb') as file:
+                param_io = io.BytesIO(file.read())
+
+        return model_io, param_io
     finally:
         if isinstance(tmp, tempfile._TemporaryFileWrapper):
             tmp.close()
+        if os.path.exists(model_file):
+            os.remove(model_file)
+        if os.path.exists(param_file):
+            os.remove(param_file)

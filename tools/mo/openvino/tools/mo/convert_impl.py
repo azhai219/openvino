@@ -902,8 +902,9 @@ def _convert(cli_parser: argparse.ArgumentParser, framework, args, python_api_us
                 example_outputs = None
                 if 'example_output' in args and args['example_output'] is not None:
                     example_outputs = args['example_output']
-                pdmodel = convert_paddle_to_pdmodel(args['input_model'], example_inputs, example_outputs)
+                pdmodel, pdiparams = convert_paddle_to_pdmodel(args['input_model'], example_inputs, example_outputs)
                 args['input_model'] = pdmodel
+                args['input_checkpoint'] = pdiparams
                 args['framework'] = model_framework
 
         update_args_for_saved_model_dir(args)

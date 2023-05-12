@@ -271,9 +271,15 @@ void InputModel::InputModelImpl::loadConsts(const std::basic_string<T>& folder_w
             continue;
 
         FRONT_END_GENERAL_CHECK(var_desc.type().type() == ::paddle::framework::proto::VarType::LOD_TENSOR);
+        FRONT_END_GENERAL_CHECK(weight_stream || !folder_with_weights.empty(), "Either folder with weights or stream must be provided.");
+		if (!weight_stream) {
+            std::ifstream is(get_const_path(folder_with_weights, name), std::ios::in | std::ifstream::binary);
+            FRONT_END_GENERAL_CHECK(is && is.is_open(), "Cannot open file for constant value.");
+			weight_stream = &is;
+		}
         /*
             reference:
-           https://github.com/PaddlePaddle/Paddle2ONNX/blob/c14446437041a0aa3572994d085b7a35c5b0985c/paddle2onnx/parser/parser.cc#L261
+            https://github.com/PaddlePaddle/Paddle2ONNX/blob/c14446437041a0aa3572994d085b7a35c5b0985c/paddle2onnx/parser/parser.cc#L261
             When deserialize the proto, the header of each weight
             [ 4 byte ]      -- version(not need)
             [   8 byte   ]  -- lod_level(not need)
@@ -302,6 +308,8 @@ void InputModel::InputModelImpl::loadConsts(const std::basic_string<T>& folder_w
         const auto& data_length = shape_size(shape) * type.size();
         std::vector<uint8_t> tensor_data(data_length);
 
+        bool read_succeed = read_tensor(*weight_stream, reinterpret_cast<char*>(&tensor_data[0]), data_length);
+		/*
         bool read_succeed = false;
         if (weight_stream) {
             read_succeed = read_tensor(*weight_stream, reinterpret_cast<char*>(&tensor_data[0]), data_length);
@@ -312,6 +320,7 @@ void InputModel::InputModelImpl::loadConsts(const std::basic_string<T>& folder_w
         } else {
             FRONT_END_GENERAL_CHECK(false, "Either folder with weights or stream must be provided.");
         }
+		*/
         FRONT_END_GENERAL_CHECK(read_succeed,
                                 "File containing constant with name ",
                                 name,
@@ -330,7 +339,6 @@ InputModel::InputModelImpl::InputModelImpl(const std::basic_string<T>& path,
     : m_fw_ptr{std::make_shared<ProgramDesc>()},
       m_input_model(input_model),
       m_telemetry(telemetry) {
-    std::string empty_str;
     std::ifstream weights_stream;
     std::ifstream pb_stream(get_model_path<T>(path, &weights_stream), std::ios::in | std::ifstream::binary);
 

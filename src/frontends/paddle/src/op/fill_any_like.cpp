@@ -17,7 +17,8 @@ NamedOutputs fill_any_like(const NodeContext& node) {
         // when type does not define, use the input type
         dtype = x.get_element_type();
     }
-    const std::vector<element::Type> supported_type = {element::i32,
+    const std::vector<element::Type> supported_type = {element::boolean,
+		                                               element::i32,
                                                        element::i64,
                                                        element::f16,
                                                        element::f32,

@@ -20,6 +20,7 @@ OP_CONVERTER(ceil);
 OP_CONVERTER(clip);
 OP_CONVERTER(concat);
 OP_CONVERTER(conditional_block);
+OP_CONVERTER(cos);
 OP_CONVERTER(conv2d);
 OP_CONVERTER(conv2d_transpose);
 OP_CONVERTER(cumsum);
@@ -87,7 +88,9 @@ OP_CONVERTER(rnn);
 OP_CONVERTER(roi_align);
 OP_CONVERTER(scale);
 OP_CONVERTER(select_input);
+OP_CONVERTER(set_value);
 OP_CONVERTER(shape);
+OP_CONVERTER(sin);
 OP_CONVERTER(slice);
 OP_CONVERTER(softmax);
 OP_CONVERTER(softplus);
@@ -128,6 +131,7 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"clip", op::clip},
             {"concat", op::concat},
             {"conditional_block", op::conditional_block},
+            {"cos", op::cos},
             {"conv2d", op::conv2d},
             {"conv2d_transpose", op::conv2d_transpose},
             {"cumsum", op::cumsum},
@@ -201,7 +205,9 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"roi_align", op::roi_align},
             {"scale", op::scale},
             {"select_input", op::select_input},
+            {"set_value", op::set_value},
             {"shape", op::shape},
+            {"sin", op::sin},
             {"slice", op::slice},
             {"softmax", op::softmax},
             {"softplus", op::softplus},

@@ -56,6 +56,7 @@ from openvino.runtime import opset9
 from openvino.runtime import opset10
 from openvino.runtime import opset11
 from openvino.runtime import opset12
+from openvino.runtime import opset12 as default_opset
 
 # Import properties API
 from openvino.runtime import properties

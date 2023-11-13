@@ -1262,6 +1262,21 @@ void Graph::InferDynamic(SyncInferRequest* request) {
             auto& node = executableGraphNodes[inferCounter];
             VERBOSE(node, getConfig().debugCaps.verbose);
             PERF(node, getConfig().collectPerfCounters);
+            auto name = node->getName();
+            auto type = node->getTypeStr();
+            std::cout << "== node name: " << name << " :" << type << " ==\n";
+            if (type == "GreaterEqual") {
+                std::cout << "######  Find OP GreaterEqual\n";
+                std::cout << "== node: " << algToString(node->getAlgorithm()) << "\n";
+                const auto& shapeA = node->getInputShapeAtPort(0).toString();
+                const auto& shapeB = node->getInputShapeAtPort(1).toString();
+
+                const auto& precA = node->getOriginalInputPrecisionAtPort(0);
+                const auto& precB = node->getOriginalInputPrecisionAtPort(0);
+                std::cout << "== input A: " << shapeA << " : " << precA << "\n"; 
+                std::cout << "== input B: " << shapeB << " : " << precB << "\n"; 
+                std::cout << "=============================================\n";
+            }
 
             if (request)
                 request->throw_if_canceled();

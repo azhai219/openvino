@@ -1363,14 +1363,6 @@ void print_affinity() {
     DEBUG_LOG("==== ", tid, "  ", ss.str());
 }
 
-static int repeat_ppnodes = []() {
-    auto* DEBUG_RPT = std::getenv("DEBUG_RPT");
-    if (DEBUG_RPT) {
-        return atoi(DEBUG_RPT);
-    }
-    return 1;
-}();
-
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
     if (!node->parallelWith.empty()) {
         // run nodes in parallel
@@ -1379,37 +1371,46 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
             auto cpuExecutor =
                 std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(context->getStreamExecutor());
 
-            if (cpuExecutor && repeat_ppnodes > 0) {
+            if (cpuExecutor) {
                 auto cores_per_sockets = cpuExecutor->get_cores_mt_sockets();
                 int nsockets = cpuExecutor->get_cores_mt_sockets().size();
                 auto num_parallel_nodes = parallelNodes.size();
                 if (nsockets == 0)
                     nsockets = 1;
 
-                DEBUG_LOG("==== ", printable(cores_per_sockets));
-                ov::parallel_for(nsockets, [&](int socket_id) {
+                std::atomic<int> nodes_remain(num_parallel_nodes);
+                auto run_nodes = [&](size_t i0, size_t i1) {
+                    for (size_t i = i0; i < i1; i++) {
+                        auto& n = parallelNodes[i];
+                        DEBUG_LOG("====parallel node", *n);
+                        if (n->isDynamicNode()) {
+                            n->executeDynamic(stream);
+                        } else {
+                            n->execute(stream);
+                        }
+                        nodes_remain--;
+                    }
+                };
+
+                DEBUG_LOG("nsockets=", nsockets);
+                // enqueue (nsockets-1) sub stream tasks
+                for (int socket_id = 1; socket_id < nsockets; socket_id++) {
                     size_t i0{0}, i1{0};
                     splitter(num_parallel_nodes, nsockets, socket_id, i0, i1);
-                    DEBUG_LOG("==== socket ", socket_id, "/", nsockets, " runs node [", i0, ",", i1, ")");
-                    auto run_nodes = [&]() {
-                        for (int x = 0; x < repeat_ppnodes; x++)
-                        for (size_t i = i0; i < i1; i++) {
-                            auto& n = parallelNodes[i];
-                            DEBUG_LOG("====parallel node", *n);
-                            if (n->isDynamicNode()) {
-                                n->executeDynamic(stream);
-                            } else {
-                                n->execute(stream);
-                            }
-                        }
-                    };
-
-                    if (socket_id == 0) {
-                        run_nodes();
-                    } else {
-                        cpuExecutor->run_and_wait_sub_stream({run_nodes, }, socket_id - 1);
-                    }
-                });
+                    cpuExecutor->run_sub_stream(
+                        [i0, i1, &run_nodes]() {
+                            run_nodes(i0, i1);
+                        },
+                        socket_id - 1);
+                }
+                // run in main stream (current socket)
+                {
+                    size_t i0{0}, i1{0};
+                    splitter(num_parallel_nodes, nsockets, 0, i0, i1);
+                    run_nodes(i0, i1);
+                }
+                // wait all nodes to finish
+                while (nodes_remain.load() > 0) {}
             } else {
                 // fallback to serialize executor
                 for (auto& node : parallelNodes) {

@@ -3,6 +3,7 @@
 #
 # multiclass_nms paddle model generator
 #
+'''
 import os
 import numpy as np
 import copy  # deepcopy
@@ -419,3 +420,4 @@ if __name__ == "__main__":
     multiclass_nms_lod('_nms_top_k', nms_top_k = 2)
     multiclass_nms_lod('_keep_top_k', keep_top_k = 1)
     multiclass_nms_lod('_normalized', normalized = True)
+'''

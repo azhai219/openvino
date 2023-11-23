@@ -7,6 +7,7 @@
 # https://www.paddlepaddle.org.cn/documentation/docs/zh/api/paddle/nn/Embedding_cn.html#embedding
 # equal to "gather"
 # 
+'''
 import numpy as np
 import sys
 
@@ -31,9 +32,6 @@ def ov_embedding(ids, vocab_embeddings, vocab_size, embedding_dim, padding_idx, 
         padding_idx += vocab_size
     
     if padding_idx is not None:
-        '''
-        mask W
-        '''
         masked_embeddings = np.ones(vocab_embeddings.shape, dtype='int64')
         masked_embeddings[padding_idx,:] = 0 # mask
 
@@ -168,3 +166,4 @@ if __name__ == "__main__":
     outputs = embedding("embedding_tensorIds_paddings", ids, vocab_size, embedding_dim, padding_idx=cpt.long_type(padding_idx), vocab_embeddings=table, compare=False)
     # print('outputs {}'.format(outputs))
    
+'''

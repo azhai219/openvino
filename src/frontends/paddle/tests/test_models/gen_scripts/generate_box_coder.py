@@ -1,3 +1,4 @@
+'''
 import sys
 
 import numpy as np
@@ -117,3 +118,4 @@ def box_coder_dygraph():
 if __name__ == "__main__":
     main()
     # box_coder_dygraph()
+'''

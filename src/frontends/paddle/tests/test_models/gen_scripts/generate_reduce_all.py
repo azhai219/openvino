@@ -4,6 +4,7 @@
 #
 # reduce_all paddle model generator
 #
+'''
 
 import numpy as np
 import sys
@@ -46,3 +47,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''

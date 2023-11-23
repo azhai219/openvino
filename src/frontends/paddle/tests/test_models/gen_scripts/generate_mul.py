@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+'''
 import numpy as np
 from save_model import saveModel
 import sys
@@ -50,3 +51,4 @@ if __name__ == "__main__":
     paddle_matmul("matmul_xt", input_2x5, input_2x3, x_transpose=True, y_transpose=False)
     paddle_matmul("matmul_yt", input_2x3, input_5x3, x_transpose=False, y_transpose=True)
     paddle_matmul("matmul_xt_yt", input_2x5, input_5x2, x_transpose=True, y_transpose=True)
+'''

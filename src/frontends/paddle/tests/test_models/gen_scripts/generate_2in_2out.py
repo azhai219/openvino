@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+'''
 import paddle
 from paddle import fluid
 import numpy as np
@@ -44,3 +45,4 @@ saveModel("2in_2out", exe, feedkeys=[x1, x2],
           inputs=[inp_blob1, inp_blob2],
           outputs=[res_paddle[0], res_paddle[1]], target_dir=sys.argv[1],
           use_static_api=True)
+'''

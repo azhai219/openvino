@@ -4,6 +4,7 @@
 #
 # prior_box paddle model generator
 #
+'''
 import numpy as np
 from save_model import saveModel
 import sys
@@ -125,3 +126,4 @@ if __name__ == "__main__":
 
     for item in prior_box_attrs_list:
         pred_paddle = prior_box(item['name'], input_data, image_data, item)
+'''

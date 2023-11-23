@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+'''
 import paddle
 from paddle import fluid
 import numpy as np
@@ -36,3 +37,4 @@ def create_multi_output_model():
 
 create_multi_output_model()
 
+'''

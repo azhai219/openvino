@@ -4,6 +4,7 @@
 #
 # pool2d paddle dynamic model generator
 #
+'''
 
 import paddle
 from paddle import fluid
@@ -33,3 +34,4 @@ outs = exe.run(
     fetch_list=[adative_pool2d])
 
 saveModel("pool2d_dyn_hw", exe, feedkeys=['inputX1'], fetchlist=adative_pool2d, inputs=[inp_blob1], outputs=outs, target_dir=sys.argv[1])
+'''

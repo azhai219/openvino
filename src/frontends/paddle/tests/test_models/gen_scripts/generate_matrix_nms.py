@@ -3,6 +3,7 @@
 #
 # matrix_nms paddle model generator
 #
+'''
 import os
 import numpy as np
 import copy  # deepcopy
@@ -405,3 +406,4 @@ def TEST1(N=7, M=1200, C=21):
 if __name__ == "__main__":
     main()
     #TEST1()
+'''

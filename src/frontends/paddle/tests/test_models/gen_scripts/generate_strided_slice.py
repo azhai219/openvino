@@ -4,6 +4,7 @@
 #
 # strided_slice paddle model generator
 #
+'''
 import numpy as np
 from save_model import saveModel
 import sys
@@ -132,3 +133,4 @@ if __name__ == "__main__":
     input3 = np.random.rand(1, 100, 1).astype('float32')
     for item in strided_slice_input3_list:
         pred_paddle = strided_slice(item['name'], input3, item)
+'''

@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+'''
 import paddle
 from paddle import fluid
 import numpy as np
@@ -40,3 +41,4 @@ res_paddle = exe.run(fluid.default_main_program(), fetch_list=var, feed=inp_dict
 
 fluid.io.save_inference_model(os.path.join(sys.argv[1], "2in_2out_dynbatch"), list(inp_dict.keys()), var, exe,
                               model_filename="2in_2out_dynbatch.pdmodel", params_filename="2in_2out_dynbatch.pdiparams")
+'''

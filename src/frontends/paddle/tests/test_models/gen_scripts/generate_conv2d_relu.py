@@ -1,5 +1,6 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+'''
 
 import paddle
 from paddle import fluid
@@ -26,3 +27,4 @@ res_paddle = exe.run(fluid.default_main_program(), fetch_list=var, feed=inp_dict
 
 fluid.io.save_inference_model(os.path.join(sys.argv[1], "conv2d_relu"), list(inp_dict.keys()), var, exe,
                               model_filename="conv2d_relu.pdmodel", params_filename="conv2d_relu.pdiparams")
+'''

@@ -4,6 +4,7 @@
 #
 # split paddle model generator
 #
+'''
 import numpy as np
 from save_model import saveModel
 import sys
@@ -116,3 +117,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''

@@ -1,6 +1,7 @@
 #
 # pool2d paddle model generator
 #
+'''
 import numpy as np
 from save_model import saveModel
 import sys
@@ -159,3 +160,4 @@ if __name__ == "__main__":
     attr["post_nms_top_n"] = 60
 
     generate_proposals_v2(input_name, input_data, attr)
+'''

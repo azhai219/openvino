@@ -1,4 +1,5 @@
 # ref: https://www.paddlepaddle.org.cn/tutorials/projectdetail/1998893#anchor-2
+'''
 
 import os
 import sys
@@ -287,3 +288,4 @@ if __name__ == "__main__":
     print(loop_if_loop_complex())
     print(loop_tensor_array().numpy())
     x, y = loop_if_tensor_array()
+'''

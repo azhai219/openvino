@@ -107,6 +107,14 @@ private:
     float weiSparseRate = 0.f;
     bool useSparseWeightsDecompression();
     VectorDims expectedBiasDims {};
+    // numa
+    bool useNuma = false;
+    std::vector<MemoryPtr> vecWeiPtr;
+    // use to split memory for numa compute
+    void splitMemory(size_t axis);
+    void prepareNumaWeight();
+    void PackMemory();
+    // mlas
     bool useMlas = false;
 #ifdef OV_CPU_WITH_MLAS
     int64_t M, N, K;

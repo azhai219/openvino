@@ -29,6 +29,7 @@
 #include "common/cpu_convert.h"
 #include "shape_inference/custom/fullyconnected.hpp"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -247,6 +248,15 @@ void FullyConnected::getSupportedDescriptors() {
 
     inDims = isDynamicNode() ? makeDummyInputDims() : getInputShapeAtPort(DATA_ID).getStaticDims();
     outDims = isDynamicNode() ? makeDummyOutputDims(inDims) : getOutputShapeAtPort(0).getStaticDims();
+
+    if (getenv("USE_NUMA_FC")) {
+        if (std::string(getenv("USE_NUMA_FC")) == "ON") {
+            useNuma = true;
+            auto wgtDims = getInputShapeAtPort(WEIGHTS_ID).getStaticDims();
+            return;
+        }
+    }
+
 #if defined(OV_CPU_WITH_MLAS) && (defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64))
     // MLAS doesn't support post-ops fusing and only supports FP32. INT8 is not enabled yet
     // Disable MLAS when FC could fuse post-ops
@@ -289,6 +299,14 @@ void FullyConnected::getSupportedDescriptors() {
     }
 }
 
+// split input and weight
+void FullyConnected::splitMemory(size_t axis) {
+    return;
+}
+void FullyConnected::prepareNumaWeight() {
+    const auto& wgtDims = getParentEdgeAt(WEIGHTS_ID)->getMemoryPtr()->getStaticDims();
+    return;
+}
 #ifdef OV_CPU_WITH_MLAS
 void FullyConnected::prepackMLASWeight() {
     auto prepareMLASWeight = [&](const int64_t N, const int64_t K) {
@@ -489,6 +507,11 @@ void FullyConnected::prepareWeightsUsingDummyShape() {
 #endif
 
 void FullyConnected::createPrimitive() {
+    if (useNuma) {
+        // Node::createPrimitive();
+        prepareNumaWeight();
+        return;
+    }
 #ifdef OV_CPU_WITH_MLAS
     if (useMlas) {
         Node::createPrimitive();

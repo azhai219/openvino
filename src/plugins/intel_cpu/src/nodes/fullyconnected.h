@@ -75,6 +75,7 @@ private:
 
     void setPostOps(dnnl::primitive_attr &attr, const VectorDims &dims);
 
+    dnnl::memory::desc create2Dcandidate(const dnnl::memory::desc& desc);
     bool withBiases = false;
 
     std::string errorPrefix;
@@ -111,9 +112,8 @@ private:
     bool useNuma = false;
     std::vector<MemoryPtr> vecWeiPtr;
     // use to split memory for numa compute
-    void splitMemory(size_t axis);
-    void prepareNumaWeight();
-    void PackMemory();
+    void splitWeightMemory();
+    void createSubFCPrimitive();
     // mlas
     bool useMlas = false;
 #ifdef OV_CPU_WITH_MLAS

@@ -27,6 +27,7 @@
 #include "common/primitive_desc.hpp"
 #include "common/primitive_desc_iface.hpp"
 #include "common/cpu_convert.h"
+#include "common/cpu_memcpy.h"
 #include "shape_inference/custom/fullyconnected.hpp"
 
 #include <algorithm>
@@ -252,8 +253,6 @@ void FullyConnected::getSupportedDescriptors() {
     if (getenv("USE_NUMA_FC")) {
         if (std::string(getenv("USE_NUMA_FC")) == "ON") {
             useNuma = true;
-            auto wgtDims = getInputShapeAtPort(WEIGHTS_ID).getStaticDims();
-            return;
         }
     }
 
@@ -299,14 +298,7 @@ void FullyConnected::getSupportedDescriptors() {
     }
 }
 
-// split input and weight
-void FullyConnected::splitMemory(size_t axis) {
-    return;
-}
-void FullyConnected::prepareNumaWeight() {
-    const auto& wgtDims = getParentEdgeAt(WEIGHTS_ID)->getMemoryPtr()->getStaticDims();
-    return;
-}
+
 #ifdef OV_CPU_WITH_MLAS
 void FullyConnected::prepackMLASWeight() {
     auto prepareMLASWeight = [&](const int64_t N, const int64_t K) {
@@ -507,11 +499,6 @@ void FullyConnected::prepareWeightsUsingDummyShape() {
 #endif
 
 void FullyConnected::createPrimitive() {
-    if (useNuma) {
-        // Node::createPrimitive();
-        prepareNumaWeight();
-        return;
-    }
 #ifdef OV_CPU_WITH_MLAS
     if (useMlas) {
         Node::createPrimitive();
@@ -530,6 +517,7 @@ void FullyConnected::createPrimitive() {
 
 void FullyConnected::prepareParams() {
     auto srcMemPtr = getParentEdgesAtPort(0)[0]->getMemoryPtr();
+    auto wgtMemPtr = getParentEdgesAtPort(1)[0]->getMemoryPtr();
     auto dstMemPtr = getChildEdgesAtPort(0)[0]->getMemoryPtr();
     if (!dstMemPtr || !dstMemPtr->isAllocated())
         OPENVINO_THROW("Destination memory hasn't been allocated.");
@@ -557,15 +545,14 @@ void FullyConnected::prepareParams() {
         return;
     }
 #endif
+    auto wgtDims = wgtMemPtr->getStaticDims();
     DnnlMemoryDescPtr weightDesc = MemoryDescUtils::convertToDnnlMemoryDesc(weightDescIP);
     DnnlMemoryDescCPtr biasDesc = nullptr;
     if (biasMemPtr) {
         biasDesc = biasMemPtr->getDescWithType<DnnlMemoryDesc>();
-    }
-
+    } 
     DnnlMemoryDescCPtr inDesc = srcMemPtr->getDescWithType<DnnlMemoryDesc>();
     DnnlMemoryDescCPtr outDesc = dstMemPtr->getDescWithType<DnnlMemoryDesc>();
-
     useConv1x1 = canBeExecutedInConv1x1();
     FCKey key = {inDesc,
                  weightDesc,
@@ -575,7 +562,6 @@ void FullyConnected::prepareParams() {
                  implementationTypeIP,
                  useConv1x1,
                  useSparseWeights};
-
     auto& engine = getEngine();
 
     auto builder = [&engine](const FCKey& key) -> executorPtr {
@@ -679,7 +665,133 @@ void FullyConnected::executeMLAS() {
 
 #endif
 
+void FullyConnected::splitWeightMemory() {
+    auto wgtMemPtr = getParentEdgesAtPort(1)[0]->getMemoryPtr();
+    auto wgtDims = wgtMemPtr->getShape().getDims();
+    // inDesc
+    const auto inDesc = wgtMemPtr->getDescWithType<MemoryDesc>();
+
+    // weight split
+    auto wgt_dims(wgtDims);
+    wgt_dims.front() /= 2;
+    auto wgt_dnnl_dims = DnnlExtensionUtils::convertToDnnlDims(wgt_dims);
+    auto wgt_prec = wgtMemPtr->getDataType();
+    auto wgt_md = dnnl::memory::desc(wgt_dnnl_dims, wgt_prec, dnnl::memory::format_tag::cn);
+
+    const size_t stride = wgtDims[0] / 2;
+    const size_t num_counters = wgtDims[1];
+
+    std::vector<dnnl::memory> outs({{wgt_md, getEngine()},{wgt_md, getEngine()}});
+    // auto p1 = std::make_shared<Memory>(eng, wgt_md);
+
+    std::vector<uint8_t*> result(outs.size());
+    for (size_t i = 0; i < outs.size(); ++i) {
+        result[i] = reinterpret_cast<uint8_t*>(outs[i].get_data_handle());
+    }
+    uint8_t* srcData = reinterpret_cast<uint8_t*>(wgtMemPtr->getData());
+    std::vector<size_t> srcDataOffset = {0, stride};
+
+    parallel_for2d(result.size(), num_counters, [&](size_t i, size_t j){
+        uint8_t* dstData = result[i];
+        cpu_memcpy(&dstData[j * stride],
+                   &srcData[srcDataOffset[i] + j*stride],
+                   stride);
+    });
+}
+
+void FullyConnected::createSubFCPrimitive() {
+    // get engine
+    auto& engine = getEngine();
+
+    // Memory Ptr
+    auto srcMemPtr = getParentEdgesAtPort(0)[0]->getMemoryPtr();
+    auto wgtMemPtr = getParentEdgesAtPort(1)[0]->getMemoryPtr();
+    auto dstMemPtr = getChildEdgesAtPort(0)[0]->getMemoryPtr();
+
+    // Dims
+    auto srcDims = srcMemPtr->getShape().getDims();
+    auto wgtDims = wgtMemPtr->getShape().getDims();
+    auto dstDims = dstMemPtr->getShape().getDims();
+    // debug
+    auto srcShape = srcMemPtr->getShape().toString();
+    auto wgtShape = wgtMemPtr->getShape().toString();
+    auto dstShape = dstMemPtr->getShape().toString();
+    std::cout << weightsNonTransposed << ": a * b = c: " << srcShape << " x " << wgtShape << " = " << dstShape << "\n";
+
+    // SubDims
+    std::vector<size_t> src_dims;
+    if (srcDims.size() == 3) {
+        src_dims = std::vector<size_t>({srcDims[0]*srcDims[1], srcDims[2]});
+    } else {
+        src_dims = srcDims;
+    }
+    auto src_dnnl_dims = DnnlExtensionUtils::convertToDnnlDims(src_dims);
+    std::vector<size_t> dst_dims;
+    if (dstDims.size() == 3) {
+        dst_dims = std::vector<size_t>({dstDims[0]*dstDims[1], dstDims[2]/2});
+    } else {
+        dst_dims = dstDims;
+        dst_dims.back() /= 2;
+    }
+    auto dst_dnnl_dims = DnnlExtensionUtils::convertToDnnlDims(dst_dims);
+    // weight split
+    auto wgt_dims(wgtDims);
+    wgt_dims.front() /= 2;
+    auto wgt_dnnl_dims = DnnlExtensionUtils::convertToDnnlDims(wgt_dims);
+
+    // precision
+    auto src_prec = srcMemPtr->getDataType();
+    // for inference, src and wgt's dtype should be same.
+    // https://oneapi-src.github.io/oneDNN/dev_guide_inner_product.html#data-types
+    auto wgt_prec = src_prec; // wgtMemPtr->getDataType();
+    auto dst_prec = dstMemPtr->getDataType();
+
+    // memory descriptor
+    auto src_md = dnnl::memory::desc(src_dnnl_dims, src_prec, dnnl::memory::format_tag::nc);
+    auto wgt_md = dnnl::memory::desc(wgt_dnnl_dims, wgt_prec, dnnl::memory::format_tag::cn);
+    auto dst_md = dnnl::memory::desc(dst_dnnl_dims, dst_prec, dnnl::memory::format_tag::nc);
+
+    // memory
+    auto src_mem = dnnl::memory(src_md, engine);
+    auto wgt_mem = dnnl::memory(wgt_md, engine);
+    auto dst_mem = dnnl::memory(dst_md, engine);
+    const size_t wgt_offset = wgt_dims[0] * wgt_dims[1];
+    const size_t dst_offset = dst_dims[0] * dst_dims[1];
+
+    const dnnl::primitive_attr attr;
+    auto inner_product_pd = inner_product_forward::primitive_desc(engine,
+                                                                  prop_kind::forward_inference,
+                                                                  src_md,
+                                                                  wgt_md,
+                                                                  dst_md,
+                                                                  attr);
+    auto inner_product_prim = inner_product_forward(inner_product_pd);
+
+    /*
+    std::unordered_map<int, dnnl::memory> inner_product_args;
+    inner_product_args[DNNL_ARG_SRC] = src_mem;
+    inner_product_args[DNNL_ARG_WEIGHTS] = wgt_mem;
+    inner_product_args[DNNL_ARG_DST] = dst_mem;
+
+    inner_product_args.at(DNNL_ARG_SRC).set_data_handle(srcMemPtr->getData());
+    // infer0
+    inner_product_args.at(DNNL_ARG_WEIGHTS).set_data_handle(wgtMemPtr->getData());
+    inner_product_args.at(DNNL_ARG_DST).set_data_handle(dstMemPtr->getData());
+    inner_product_prim.execute(engine, inner_product_args);
+    engine.wait()
+    
+    // infer1
+    inner_product_args.at(DNNL_ARG_WEIGHTS).set_data_handle(wgtMemPtr->getData() + wgt_offset);
+    inner_product_args.at(DNNL_ARG_DST).set_data_handle(dstMemPtr->getData());
+    inner_product_prim.execute(engine, inner_product_args);
+    engine.wait()
+    */
+}
+
 void FullyConnected::execute(dnnl::stream strm) {
+    if (useNuma) {
+        createSubFCPrimitive();
+    }
 #ifdef OV_CPU_WITH_MLAS
     if (useMlas) {
         executeMLAS();
@@ -823,18 +935,28 @@ const std::vector<impl_desc_type>& FullyConnected::getDefaultImplPriority() {
 // WA: creation DnnlMemoryDesc with format == any is prohibited
 // so we create dnnl::memory::desc directly
 // we need specific method and can't remove createDescriptor from base class because its used into initDescriptor
+dnnl::memory::desc FullyConnected::create2Dcandidate(const dnnl::memory::desc& desc) {
+    if (desc.get_dims().size() != 3) // already 2D
+        return desc;
+
+    auto inDims = desc.get_dims();
+    auto normalizedInDims = {inDims[0] * inDims[1], inDims[2]};
+
+    return dnnl::memory::desc(normalizedInDims, desc.get_data_type(),
+                              DnnlExtensionUtils::GetPlainFormatByRank(normalizedInDims.size()));
+}
 void FullyConnected::createDescriptorInternal(const dnnl::memory::desc &inputDesc,
                                               const dnnl::memory::desc &outputDesc) {
-    auto create2Dcandidate = [](const dnnl::memory::desc &desc) {
-        if (desc.get_dims().size() != 3) // already 2D
-            return desc;
+    // auto create2Dcandidate = [](const dnnl::memory::desc &desc) {
+    //     if (desc.get_dims().size() != 3) // already 2D
+    //         return desc;
 
-        auto inDims = desc.get_dims();
-        auto normalizedInDims = {inDims[0] * inDims[1], inDims[2]};
+    //     auto inDims = desc.get_dims();
+    //     auto normalizedInDims = {inDims[0] * inDims[1], inDims[2]};
 
-        return dnnl::memory::desc(normalizedInDims, desc.get_data_type(),
-                                  DnnlExtensionUtils::GetPlainFormatByRank(normalizedInDims.size()));
-    };
+    //     return dnnl::memory::desc(normalizedInDims, desc.get_data_type(),
+    //                               DnnlExtensionUtils::GetPlainFormatByRank(normalizedInDims.size()));
+    // };
 
     const auto in_candidate  = create2Dcandidate(inputDesc);
     const auto out_candidate = create2Dcandidate(outputDesc);

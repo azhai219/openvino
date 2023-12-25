@@ -12,9 +12,17 @@
 #include "itt.hpp"
 
 /*
-    
-    
-    [fc] => [split -> fc0 & fc1 -> concat]
+    -----       -----------       -----------
+    | A |   x   |    B    |   =   |    C    |
+    -----       -----------       -----------
+
+                    |   |   |
+                    V   V   V
+
+    -----       -----------       -----------
+    | A |   x   | B0 | B1 |   =   | C0 | C1 |
+    -----       -----------       -----------
+
 */
 ov::intel_cpu::SplitFC::SplitFC() {
     MATCHER_SCOPE(SplitFC);
@@ -25,45 +33,48 @@ ov::intel_cpu::SplitFC::SplitFC() {
 
         const auto& fc_node = pattern_map.at(fc_m).get_node_shared_ptr();
         // get input
-        auto src = fc_node->get_input_node_shared_ptr(0);
-        auto wgt = fc_node->get_input_node_shared_ptr(1);
-        bool weight_is_dynamic = wgt->is_dynamic();
+        auto src_item = fc_node->get_input_node_shared_ptr(0);
+        auto wgt_item = fc_node->get_input_node_shared_ptr(1);
+        bool weight_is_dynamic = wgt_item->is_dynamic();
         if (weight_is_dynamic) {
             return false;
         }
-        auto w_shape = fc_node->get_input_shape(1);
 
-        auto shape_a = fc_node->get_input_partial_shape(0);
-        auto shape_b = fc_node->get_input_partial_shape(1);
-        auto shape_c = fc_node->get_output_partial_shape(0);
+        // auto w_shape = fc_node->get_input_shape(1);
+       
+        // auto shape_a = fc_node->get_input_partial_shape(0);
+        // auto shape_b = fc_node->get_input_partial_shape(1);
+        auto out_shape = fc_node->get_output_partial_shape(0);
 
-        std::cout << "a x b = c : " << shape_a.to_string() << " x " << shape_b.to_string() << " = " << shape_c.to_string() << "\n";
-        // get input info
+        // std::cout << "a x b = c : " << shape_a.to_string() << " x " << shape_b.to_string() << " = " << out_shape.to_string() << "\n";
 
         // split weight
-        auto split_wgts = std::make_shared<ov::opset12::Split>(wgt,
-                                                              ov::opset8::Constant::create<int64_t>(ov::element::i64, ov::Shape{}, {0}),
-                                                              2);
+        constexpr size_t split_dim = 0; // split happens on the first dimension.
+        constexpr size_t split_num = 2; // split the tensor into two parts.
+        auto split_wgts = std::make_shared<ov::opset12::Split>(wgt_item,
+                                                               ov::opset8::Constant::create<int64_t>(ov::element::i64, ov::Shape{}, {split_dim}),
+                                                               split_num);
         // sub fc
         auto fc_output_type = fc_node->get_output_element_type(0);
-        const auto outRank = shape_c.rank();
-        auto fc0 = std::make_shared<ov::intel_cpu::FullyConnectedNode>(src,
-                                                                       split_wgts->output(0),
-                                                                       outRank,
-                                                                       fc_output_type);
-        auto fc1 = std::make_shared<ov::intel_cpu::FullyConnectedNode>(src,
-                                                                       split_wgts->output(1),
-                                                                       outRank,
-                                                                       fc_output_type);
+        const auto out_rank = out_shape.rank();
+        auto fc_node0 = std::make_shared<ov::intel_cpu::FullyConnectedNode>(src_item,
+                                                                            split_wgts->output(0),
+                                                                            out_rank,
+                                                                            fc_output_type);
+        auto fc_node1 = std::make_shared<ov::intel_cpu::FullyConnectedNode>(src_item,
+                                                                            split_wgts->output(1),
+                                                                            out_rank,
+                                                                            fc_output_type);
         // concat
-        ov::OutputVector args({fc0, fc1});
-        auto concat = std::make_shared<ov::opset12::Concat>(args, -1);
-        auto new_shape = concat->get_output_partial_shape(0);
-        if (new_shape != shape_c) {
+        ov::OutputVector concat_args({fc_node0, fc_node1});
+        constexpr size_t concat_dim = -1; // concat happens on the lastest dimension.
+        auto concat_node = std::make_shared<ov::opset12::Concat>(concat_args, concat_dim);
+        auto concat_shape = concat_node->get_output_partial_shape(0);
+        if (concat_shape != out_shape) {
             return false;
         }
-        std::cout << "[dbg] new shape: " << new_shape.to_string() << "\n";
-        replace_node(fc_node, concat);
+        // std::cout << "[dbg] new shape: " << concat_shape.to_string() << "\n";
+        replace_node(fc_node, concat_node);
         return true;
     };
 

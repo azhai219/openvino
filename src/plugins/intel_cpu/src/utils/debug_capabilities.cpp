@@ -338,9 +338,9 @@ std::ostream & operator<<(std::ostream & os, const Node &c_node) {
 
     os << ")  ";
     os << " " << node.getPrimitiveDescriptorType();
-
     // last line(s): fused layers
-    os << " " << node.getOriginalLayers();
+    os << "::" << node.getOriginalLayers();
+    os << "::" << node.getParalellDomain();
 
     if (node.PerfCounter().count()) {
         os << " latency:" << node.PerfCounter().avg() << "(us) x" << node.PerfCounter().count();

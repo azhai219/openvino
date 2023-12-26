@@ -163,9 +163,6 @@ struct CPUStreamsExecutor::Impl {
                                                             .set_max_threads_per_core(max_threads_per_core)});
             } else {
                 _taskArena.reset(new custom::task_arena{concurrency});
-                // _cpu_ids = static_cast<int>(_impl->_config._stream_processor_ids.size()) == _impl->_config._streams
-                //                ? _impl->_config._stream_processor_ids[stream_id]
-                //                : _cpu_ids;
                 _cpu_ids = _impl->_config._stream_processor_ids[stream_id];
                 if (_cpu_ids.size() > 0) {
                     CpuSet processMask;
@@ -193,15 +190,11 @@ struct CPUStreamsExecutor::Impl {
             int max_threads_per_core;
             StreamCreateType stream_type;
             const auto org_proc_type_table = get_org_proc_type_table();
-            // const auto stream_id =
-            //     _impl->_config._streams == 0
-            //         ? 0
-            //         : (_streamId >= _impl->_config._streams ? _impl->_config._streams - 1 : _streamId);
             const auto stream_id =
-                _sub_stream_id >= 0
-                    ? _impl->_config._streams + _sub_stream_id
-                    : (_impl->_config._streams == 0
-                           ? 0
+                _impl->_config._streams == 0
+                    ? 0
+                    : (_sub_stream_id >= 0
+                           ? _impl->_config._streams + _sub_stream_id
                            : (_streamId >= _impl->_config._streams ? _impl->_config._streams - 1 : _streamId));
 
             get_cur_stream_info(stream_id,

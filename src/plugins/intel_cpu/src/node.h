@@ -290,6 +290,9 @@ public:
     const std::string &getOriginalLayers() const {
         return originalLayers;
     }
+    const std::string &getParalellDomain() const {
+        return paralellDomain;
+    }
 
     Type getType() const {
         return type;
@@ -594,6 +597,7 @@ protected:
     bool enforceBF16evenForGraphTail = false;
 
     std::string originalLayers;  // contains names of the original layers separated by comma
+    std::string paralellDomain;
 
     Node(const std::shared_ptr<ov::Node>& op, const GraphContext::CPtr ctx, const ShapeInferFactory& shapeInferFactory);
     Node(const std::string& type, const std::string& name, const GraphContext::CPtr ctx);

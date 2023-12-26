@@ -261,6 +261,8 @@ private:
 
     std::unordered_map<Node*, size_t> syncNodesInds;
 
+    std::map<NodePtr, std::vector<NodePtr>> paralellNodes;
+
     GraphContext::CPtr context;
 
     void EnforceInferencePrecision();

@@ -238,6 +238,9 @@ void Graph::InitGraph() {
 
     InitDescriptors();
 
+    DEBUG_LOG("=============== 3333");
+    DEBUG_LOG(*this);
+
     ResolveInplaceDirections();
 
     InitOptimalPrimitiveDescriptors();
@@ -261,6 +264,49 @@ void Graph::InitGraph() {
 
     ExtractExecutableNodes();
     SearchInternalStateNodes();
+
+    // checking nodes with same paralellDomain between syncNodesInds
+    // these nodes can be executed in paralell on multi-sockets.
+    std::vector<size_t> sync_idx;
+    for (const auto& nodeIndx : syncNodesInds) {
+        DEBUG_LOG("syncNode: ", *nodeIndx.first, nodeIndx.second);
+        sync_idx.push_back(nodeIndx.second);
+    }
+    sync_idx.push_back(graphNodes.size());
+    std::sort(sync_idx.begin(), sync_idx.end());
+
+    int k0 = -1;
+    for (size_t i = 0; i < sync_idx.size(); i++) {
+        auto k1 = static_cast<int>(sync_idx[i]);
+        // check nodes with same paralellDomain between (k0, k1)
+        std::map<std::string, std::vector<NodePtr>> pdomain_nodes;
+        for (int k = k0 + 1; k < k1; k++) {
+            auto& node = graphNodes[k];
+            auto& domain = node->getParalellDomain();
+            if (domain.empty())
+                continue;
+            if (pdomain_nodes.count(domain) == 0)
+                pdomain_nodes[domain] = {};
+            pdomain_nodes[domain].push_back(node);
+        }
+        // recorder valid paralell_nodes
+        for (auto& pn : pdomain_nodes) {
+            auto& node_ptrs = pn.second;
+            for (auto& pnode : node_ptrs) {
+                paralellNodes[pnode] = {};
+            }
+            paralellNodes[node_ptrs[0]] = node_ptrs;
+        }
+        k0 = k1;
+    }
+
+    for (auto& pn : paralellNodes) {
+        std::vector<int> execidx;
+        for (auto& n : pn.second) {
+            execidx.push_back(n->getExecIndex());
+        }
+        DEBUG_LOG(" parallel nodes at #", pn.first->getExecIndex(), " : ", printable(execidx));
+    }
 
     status = hasDynNodes ? Status::ReadyDynamic : Status::ReadyStatic;
 }
@@ -1283,14 +1329,30 @@ void Graph::InferDynamic(SyncInferRequest* request) {
 }
 
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
-    DUMP(node, getConfig().debugCaps, infer_count);
-
-    OV_ITT_SCOPED_TASK(itt::domains::intel_cpu, node->profiling.execute);
-    DEBUG_LOG(*node);
-    if (node->isDynamicNode()) {
-        node->executeDynamic(stream);
+    auto pn = paralellNodes.find(node);
+    if (pn != paralellNodes.end()) {
+        // run nodes in parallel
+        auto& node_ptrs = pn->second;
+        if (!node_ptrs.empty()) {
+            for (auto& node : node_ptrs) {
+                DEBUG_LOG("====parallel node", *node);
+                if (node->isDynamicNode()) {
+                    node->executeDynamic(stream);
+                } else {
+                    node->execute(stream);
+                }
+            }
+        }
     } else {
-        node->execute(stream);
+        DUMP(node, getConfig().debugCaps, infer_count);
+
+        OV_ITT_SCOPED_TASK(itt::domains::intel_cpu, node->profiling.execute);
+        DEBUG_LOG(*node);
+        if (node->isDynamicNode()) {
+            node->executeDynamic(stream);
+        } else {
+            node->execute(stream);
+        }
     }
 }
 

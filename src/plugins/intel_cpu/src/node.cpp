@@ -134,6 +134,10 @@ Node::Node(const std::shared_ptr<ov::Node>& op,
         originalLayers = getRTInfoValue(rtInfo, "originalLayersNames");
     }
 
+    if (rtInfo.count("paralellDomain")) {
+        paralellDomain = getRTInfoValue(rtInfo, "paralellDomain");
+    }
+
     if (originalLayers.empty()) {
         addOriginalLayer(name);
     }

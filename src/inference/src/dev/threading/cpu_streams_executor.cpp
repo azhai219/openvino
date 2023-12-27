@@ -142,6 +142,10 @@ struct CPUStreamsExecutor::Impl {
                                    const int core_type,
                                    const int numa_node_id,
                                    const int max_threads_per_core) {
+            static CpuSet processMask;
+            static int ncpus = 0;
+            static std::once_flag flag1;
+
             _numaNodeId = std::max(0, numa_node_id);
             _socketId = get_socket_by_numa_node(_numaNodeId);
             if (stream_type == STREAM_WITHOUT_PARAM) {
@@ -165,9 +169,12 @@ struct CPUStreamsExecutor::Impl {
                 _taskArena.reset(new custom::task_arena{concurrency});
                 _cpu_ids = _impl->_config._stream_processor_ids[stream_id];
                 if (_cpu_ids.size() > 0) {
-                    CpuSet processMask;
-                    int ncpus = 0;
-                    std::tie(processMask, ncpus) = get_process_mask();
+                    //CpuSet processMask;
+                    //int ncpus = 0;
+                    //std::tie(processMask, ncpus) = get_process_mask();
+                    std::call_once(flag1, [&]() {
+                        std::tie(processMask, ncpus) = get_process_mask();
+                    });
                     if (nullptr != processMask) {
                         _observer.reset(new Observer{*_taskArena,
                                                      std::move(processMask),

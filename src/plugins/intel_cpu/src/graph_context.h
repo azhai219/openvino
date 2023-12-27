@@ -21,10 +21,12 @@ public:
     GraphContext(const Config& config,
                  ExtensionManager::Ptr extensionManager,
                  WeightsSharing::Ptr w_cache,
-                 bool isGraphQuantized)
+                 bool isGraphQuantized,
+                 ov::threading::IStreamsExecutor::Ptr streamExecutor = nullptr)
         : config(config),
           extensionManager(extensionManager),
           weightsCache(w_cache),
+          streamExecutor(streamExecutor),
           isGraphQuantizedFlag(isGraphQuantized) {
         rtParamsCache = std::make_shared<MultiCache>(config.rtCacheCapacity);
         rtScratchPad = std::make_shared<DnnlScratchPad>(getEngine());
@@ -57,6 +59,10 @@ public:
         return isGraphQuantizedFlag;
     }
 
+    ov::threading::IStreamsExecutor::Ptr getStreamExecutor() const {
+        return streamExecutor;
+    }
+
 private:
     Config config;  // network-level config
 
@@ -65,6 +71,8 @@ private:
 
     MultiCachePtr rtParamsCache;     // primitive cache
     DnnlScratchPadPtr rtScratchPad;  // scratch pad
+
+    ov::threading::IStreamsExecutor::Ptr streamExecutor;   // stream executor for current graph
 
     bool isGraphQuantizedFlag = false;
 };

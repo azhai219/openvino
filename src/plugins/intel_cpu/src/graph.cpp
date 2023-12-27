@@ -49,6 +49,11 @@
 #include "utils/verbose.h"
 
 #include "openvino/runtime/memory_solver.hpp"
+#include "openvino/runtime/threading/cpu_streams_executor.hpp"
+#include "openvino/core/parallel.hpp"
+
+#include <unistd.h>
+#include <sys/syscall.h>
 
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO)
 #    include <tbb/task.h>
@@ -227,6 +232,30 @@ void Graph::Replicate(const std::shared_ptr<const ov::Model> &model) {
     }
 }
 
+void Graph::GroupParallelNodes() {
+    DEBUG_LOG("=============== 3333");
+    DEBUG_LOG(*this);
+
+    std::map<std::string, std::vector<NodePtr>> pdomain_nodes;
+    for (size_t k = 0; k < graphNodes.size(); k++) {
+        auto& node = graphNodes[k];
+        auto& domain = node->getParalellDomain();
+        if (domain.empty())
+            continue;
+        if (pdomain_nodes.count(domain) == 0)
+            pdomain_nodes[domain] = {};
+        pdomain_nodes[domain].push_back(node);
+    }
+
+    // record valid paralell_nodes
+    for (auto& pn : pdomain_nodes) {
+        auto& node_ptrs = pn.second;
+        for (auto& pnode : node_ptrs) {
+            pnode->parallelWith = node_ptrs;
+        }
+    }
+}
+
 void Graph::InitGraph() {
     GraphOptimizer optimizer;
 
@@ -238,9 +267,6 @@ void Graph::InitGraph() {
 
     InitDescriptors();
 
-    DEBUG_LOG("=============== 3333");
-    DEBUG_LOG(*this);
-
     ResolveInplaceDirections();
 
     InitOptimalPrimitiveDescriptors();
@@ -248,6 +274,9 @@ void Graph::InitGraph() {
     ResolveEdgeConflicts();
 
     optimizer.ApplyImplSpecificGraphOptimizations(*this);
+
+    GroupParallelNodes();
+
     SortTopologically();
 
     const bool hasDynNodes = ProcessDynNodes();
@@ -265,49 +294,8 @@ void Graph::InitGraph() {
     ExtractExecutableNodes();
     SearchInternalStateNodes();
 
-    // checking nodes with same paralellDomain between syncNodesInds
-    // these nodes can be executed in paralell on multi-sockets.
-    std::vector<size_t> sync_idx;
-    for (const auto& nodeIndx : syncNodesInds) {
-        DEBUG_LOG("syncNode: ", *nodeIndx.first, nodeIndx.second);
-        sync_idx.push_back(nodeIndx.second);
-    }
-    sync_idx.push_back(graphNodes.size());
-    std::sort(sync_idx.begin(), sync_idx.end());
-
-    int k0 = -1;
-    for (size_t i = 0; i < sync_idx.size(); i++) {
-        auto k1 = static_cast<int>(sync_idx[i]);
-        // check nodes with same paralellDomain between (k0, k1)
-        std::map<std::string, std::vector<NodePtr>> pdomain_nodes;
-        for (int k = k0 + 1; k < k1; k++) {
-            auto& node = graphNodes[k];
-            auto& domain = node->getParalellDomain();
-            if (domain.empty())
-                continue;
-            if (pdomain_nodes.count(domain) == 0)
-                pdomain_nodes[domain] = {};
-            pdomain_nodes[domain].push_back(node);
-        }
-        // recorder valid paralell_nodes
-        for (auto& pn : pdomain_nodes) {
-            auto& node_ptrs = pn.second;
-            for (auto& pnode : node_ptrs) {
-                paralellNodes[pnode] = {};
-            }
-            paralellNodes[node_ptrs[0]] = node_ptrs;
-        }
-        k0 = k1;
-    }
-
-    for (auto& pn : paralellNodes) {
-        std::vector<int> execidx;
-        for (auto& n : pn.second) {
-            execidx.push_back(n->getExecIndex());
-        }
-        DEBUG_LOG(" parallel nodes at #", pn.first->getExecIndex(), " : ", printable(execidx));
-    }
-
+    DEBUG_LOG("=============== 4444");
+    DEBUG_LOG(*this);
     status = hasDynNodes ? Status::ReadyDynamic : Status::ReadyStatic;
 }
 
@@ -505,6 +493,37 @@ void Graph::ResolveEdgeConflicts() {
         InsertReorder(edge, layerName, edge->getInputDesc(), edge->getOutputDesc(), isOptimized);
     };
 
+    auto reuseReorderForReadonlyChildren = [&](EdgePtr& edge) {
+        if (edge->inPlace(Edge::LOOK_DOWN))
+            return false;
+
+        const auto& dstDesc = edge->getOutputDesc();
+        for (auto siblingEdge : edge->getParent()->getChildEdgesAtPort(edge->getInputNum())) {
+            if (siblingEdge == edge)
+                continue;
+            auto reorder = std::dynamic_pointer_cast<node::Reorder>(siblingEdge->getChild());
+            if (!reorder)
+                continue;
+            if (!reorder->getOutput().isCompatible(dstDesc))
+                continue;
+            auto reorder_consumers = reorder->getChildEdgesAtPort(0);
+            if (std::any_of(reorder_consumers.begin(), reorder_consumers.end(), [](EdgePtr e) {
+                    return e->inPlace(Edge::LOOK_DOWN);
+                }))
+                continue;
+
+            auto dstNode = edge->getChild();
+            EdgePtr newEdge(new Edge(reorder, dstNode, 0, edge->getOutputNum()));
+            dstNode->parentEdges.push_back(newEdge);
+            reorder->childEdges.push_back(newEdge);
+            graphEdges.push_back(newEdge);
+            edge->drop();
+            return true;
+        }
+
+        return false;
+    };
+
     auto updateEdge = [&](ptrdiff_t& i) {
         graphEdges.erase(graphEdges.begin() + i);
         i--;
@@ -540,6 +559,7 @@ void Graph::ResolveEdgeConflicts() {
                     edge = convertNode->getChildEdgeAt(0);
             }
             if (reorderStatusInternal != Edge::ReorderStatus::No) {
+                //if (!reuseReorderForReadonlyChildren(edge))
                 insertReorder(edge, reorderStatusInternal == Edge::ReorderStatus::Optimized);
             }
             updateEdge(i);
@@ -1327,19 +1347,78 @@ void Graph::InferDynamic(SyncInferRequest* request) {
         }
     }
 }
+void print_affinity() {
+    cpu_set_t mask;
+    long nproc, i;
+    pid_t tid = syscall(SYS_gettid);
+    if (sched_getaffinity(tid, sizeof(cpu_set_t), &mask) == -1) {
+        perror("sched_getaffinity");
+        assert(false);
+    }
+    nproc = sysconf(_SC_NPROCESSORS_ONLN);
+    std::stringstream ss;
+    for (i = 0; i < nproc; i++) {
+        ss << (CPU_ISSET(i, &mask) ? "X" : "_");
+    }
+    DEBUG_LOG("==== ", tid, "  ", ss.str());
+}
+
+static int repeat_ppnodes = []() {
+    auto* DEBUG_RPT = std::getenv("DEBUG_RPT");
+    if (DEBUG_RPT) {
+        return atoi(DEBUG_RPT);
+    }
+    return 1;
+}();
 
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
-    auto pn = paralellNodes.find(node);
-    if (pn != paralellNodes.end()) {
+    if (!node->parallelWith.empty()) {
         // run nodes in parallel
-        auto& node_ptrs = pn->second;
-        if (!node_ptrs.empty()) {
-            for (auto& node : node_ptrs) {
-                DEBUG_LOG("====parallel node", *node);
-                if (node->isDynamicNode()) {
-                    node->executeDynamic(stream);
-                } else {
-                    node->execute(stream);
+        auto& parallelNodes = node->parallelWith;
+        if (node == parallelNodes[0]) {
+            auto cpuExecutor =
+                std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(context->getStreamExecutor());
+
+            if (cpuExecutor && repeat_ppnodes > 0) {
+                auto cores_per_sockets = cpuExecutor->get_cores_mt_sockets();
+                int nsockets = cpuExecutor->get_cores_mt_sockets().size();
+                auto num_parallel_nodes = parallelNodes.size();
+                if (nsockets == 0)
+                    nsockets = 1;
+
+                DEBUG_LOG("==== ", printable(cores_per_sockets));
+                ov::parallel_for(nsockets, [&](int socket_id) {
+                    size_t i0{0}, i1{0};
+                    splitter(num_parallel_nodes, nsockets, socket_id, i0, i1);
+                    DEBUG_LOG("==== socket ", socket_id, "/", nsockets, " runs node [", i0, ",", i1, ")");
+                    auto run_nodes = [&]() {
+                        for (int x = 0; x < repeat_ppnodes; x++)
+                        for (size_t i = i0; i < i1; i++) {
+                            auto& n = parallelNodes[i];
+                            DEBUG_LOG("====parallel node", *n);
+                            if (n->isDynamicNode()) {
+                                n->executeDynamic(stream);
+                            } else {
+                                n->execute(stream);
+                            }
+                        }
+                    };
+
+                    if (socket_id == 0) {
+                        run_nodes();
+                    } else {
+                        cpuExecutor->run_and_wait_sub_stream({run_nodes, }, socket_id - 1);
+                    }
+                });
+            } else {
+                // fallback to serialize executor
+                for (auto& node : parallelNodes) {
+                    DEBUG_LOG("==== fb parallel node", *node);
+                    if (node->isDynamicNode()) {
+                        node->executeDynamic(stream);
+                    } else {
+                        node->execute(stream);
+                    }
                 }
             }
         }
@@ -1383,14 +1462,33 @@ void Graph::VisitNode(NodePtr node, std::vector<NodePtr>& sortedNodes) {
 
     node->temporary = true;
 
-    for (size_t i = 0; i < node->getChildEdges().size(); i++) {
-        VisitNode(node->getChildEdgeAt(i)->getChild(), sortedNodes);
+    if (node->parallelWith.size() > 0) {
+        // ensure all children of parallel nodes are enqueue
+        for (auto& n : node->parallelWith) {
+            n->temporary = true;
+        }
+
+        for (auto& n : node->parallelWith) {
+            for (size_t i = 0; i < n->getChildEdges().size(); i++) {
+                VisitNode(n->getChildEdgeAt(i)->getChild(), sortedNodes);
+            }
+        }
+        // make sure parallel nodes are always enqueue together
+        for (auto& n : node->parallelWith) {
+            n->permanent = true;
+            n->temporary = false;
+            sortedNodes.insert(sortedNodes.begin(), n);
+        }
+    } else {
+        for (size_t i = 0; i < node->getChildEdges().size(); i++) {
+            VisitNode(node->getChildEdgeAt(i)->getChild(), sortedNodes);
+        }
+
+        node->permanent = true;
+        node->temporary = false;
+
+        sortedNodes.insert(sortedNodes.begin(), node);
     }
-
-    node->permanent = true;
-    node->temporary = false;
-
-    sortedNodes.insert(sortedNodes.begin(), node);
 }
 
 void Graph::SortTopologically() {
@@ -1415,8 +1513,20 @@ void Graph::SortTopologically() {
         VisitNode(node, sorted);
     }
 
-    for (size_t i = 0; i < sorted.size(); i++)
+    for (size_t i = 0; i < sorted.size(); i++) {
+        // parallel nodes has same execIndex
+        // so they can provide correct start/end time point for
+        // their input and output memory object
+        if (sorted[i]->parallelWith.size()) {
+            if (sorted[i]->parallelWith[0] == sorted[i]) {
+                for (auto& n : sorted[i]->parallelWith) {
+                    n->execIndex = static_cast<int>(i);
+                }
+            }
+            continue;
+        }
         sorted[i]->execIndex = static_cast<int>(i);
+    }
 
     graphNodes.erase(graphNodes.begin(), graphNodes.end());
     graphNodes.assign(sorted.begin(), sorted.end());

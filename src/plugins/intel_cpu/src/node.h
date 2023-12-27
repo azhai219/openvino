@@ -591,6 +591,8 @@ protected:
 
     std::vector <NodePtr> fusedWith;
     std::vector <NodePtr> mergedWith;
+    std::vector <NodePtr> parallelWith;
+
     std::vector <impl_desc_type> customImplPriorities;
     std::vector <dnnl::memory::format_tag> inputMemoryFormatsFilter;
     std::vector <dnnl::memory::format_tag> outputMemoryFormatsFilter;

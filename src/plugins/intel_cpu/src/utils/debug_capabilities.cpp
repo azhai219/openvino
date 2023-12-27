@@ -13,6 +13,7 @@
 #include "debug_capabilities.h"
 #include "node.h"
 #include "edge.h"
+#include "graph.h"
 #include <iomanip>
 #include "nodes/input.h"
 #include "nodes/eltwise.h"
@@ -365,6 +366,16 @@ std::ostream & operator<<(std::ostream & os, const Node &c_node) {
         os << "}";
     }*/
 
+    return os;
+}
+
+// Print complex data structures in a textualized form to the console is an efficient way to investigate them
+std::ostream & operator<<(std::ostream & os, const Graph& g) {
+    os << "ov::intel_cpu::Graph " << g.GetName() << " {" << std::endl;
+    for (auto &graphNode : g.GetNodes()) {
+        std::cout << *graphNode << std::endl;
+    }
+    os << "};" << std::endl;
     return os;
 }
 

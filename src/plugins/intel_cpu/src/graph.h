@@ -234,6 +234,7 @@ protected:
     void InitOptimalPrimitiveDescriptors();
     void ResolveEdgeConflicts();
     bool ProcessDynNodes();
+    void GroupParallelNodes();
     void Allocate();
     void AllocateWithReuse();
     void ExtractExecutableNodes();
@@ -260,8 +261,6 @@ private:
     std::vector<NodePtr> executableGraphNodes;
 
     std::unordered_map<Node*, size_t> syncNodesInds;
-
-    std::map<NodePtr, std::vector<NodePtr>> paralellNodes;
 
     GraphContext::CPtr context;
 

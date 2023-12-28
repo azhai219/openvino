@@ -41,7 +41,7 @@ ov::intel_cpu::SplitFC::SplitFC() {
         }
 
         // auto w_shape = fc_node->get_input_shape(1);
-       
+
         // auto shape_a = fc_node->get_input_partial_shape(0);
         // auto shape_b = fc_node->get_input_partial_shape(1);
         auto out_shape = fc_node->get_output_partial_shape(0);
@@ -65,6 +65,9 @@ ov::intel_cpu::SplitFC::SplitFC() {
                                                                             split_wgts->output(1),
                                                                             out_rank,
                                                                             fc_output_type);
+        // runtime parallel
+        fc_node0->get_rt_info()["paralellDomain"] = fc_node->get_friendly_name();
+        fc_node1->get_rt_info()["paralellDomain"] = fc_node->get_friendly_name();
         // concat
         ov::OutputVector concat_args({fc_node0, fc_node1});
         constexpr size_t concat_dim = -1; // concat happens on the lastest dimension.

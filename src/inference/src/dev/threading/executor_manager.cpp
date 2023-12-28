@@ -27,6 +27,7 @@ class ExecutorManagerImpl : public ExecutorManager {
 public:
     ~ExecutorManagerImpl();
     std::shared_ptr<ov::threading::ITaskExecutor> get_executor(const std::string& id) override;
+    std::shared_ptr<ov::threading::IStreamsExecutor> get_stream_executor(const std::string& id) override;
     std::shared_ptr<ov::threading::IStreamsExecutor> get_idle_cpu_streams_executor(
         const ov::threading::IStreamsExecutor::Config& config) override;
     size_t get_executors_number() const override;
@@ -123,6 +124,17 @@ std::shared_ptr<ov::threading::ITaskExecutor> ExecutorManagerImpl::get_executor(
         return newExec;
     }
     return foundEntry->second;
+}
+
+std::shared_ptr<ov::threading::IStreamsExecutor> ExecutorManagerImpl::get_stream_executor(const std::string& id) {
+    std::lock_guard<std::mutex> guard(taskExecutorMutex);
+    for (const auto& it : cpuStreamsExecutors) {
+        const auto& executor = it.second;
+        const auto& executorConfig = it.first;
+        if (executorConfig._name == id)
+            return executor;
+    }
+    return nullptr;
 }
 
 std::shared_ptr<ov::threading::IStreamsExecutor> ExecutorManagerImpl::get_idle_cpu_streams_executor(

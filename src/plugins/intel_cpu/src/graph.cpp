@@ -251,8 +251,11 @@ void Graph::GroupParallelNodes() {
     // record valid paralell_nodes
     for (auto& pn : pdomain_nodes) {
         auto& node_ptrs = pn.second;
-        for (auto& pnode : node_ptrs) {
-            pnode->parallelWith = node_ptrs;
+        if (node_ptrs.size() > 1) {
+            // parallelWith includes pointer to itself
+            for (auto& pnode : node_ptrs) {
+                pnode->parallelWith = node_ptrs;
+            }
         }
     }
 }
@@ -494,37 +497,6 @@ void Graph::ResolveEdgeConflicts() {
         InsertReorder(edge, layerName, edge->getInputDesc(), edge->getOutputDesc(), isOptimized);
     };
 
-    auto reuseReorderForReadonlyChildren = [&](EdgePtr& edge) {
-        if (edge->inPlace(Edge::LOOK_DOWN))
-            return false;
-
-        const auto& dstDesc = edge->getOutputDesc();
-        for (auto siblingEdge : edge->getParent()->getChildEdgesAtPort(edge->getInputNum())) {
-            if (siblingEdge == edge)
-                continue;
-            auto reorder = std::dynamic_pointer_cast<node::Reorder>(siblingEdge->getChild());
-            if (!reorder)
-                continue;
-            if (!reorder->getOutput().isCompatible(dstDesc))
-                continue;
-            auto reorder_consumers = reorder->getChildEdgesAtPort(0);
-            if (std::any_of(reorder_consumers.begin(), reorder_consumers.end(), [](EdgePtr e) {
-                    return e->inPlace(Edge::LOOK_DOWN);
-                }))
-                continue;
-
-            auto dstNode = edge->getChild();
-            EdgePtr newEdge(new Edge(reorder, dstNode, 0, edge->getOutputNum()));
-            dstNode->parentEdges.push_back(newEdge);
-            reorder->childEdges.push_back(newEdge);
-            graphEdges.push_back(newEdge);
-            edge->drop();
-            return true;
-        }
-
-        return false;
-    };
-
     auto updateEdge = [&](ptrdiff_t& i) {
         graphEdges.erase(graphEdges.begin() + i);
         i--;
@@ -560,7 +532,6 @@ void Graph::ResolveEdgeConflicts() {
                     edge = convertNode->getChildEdgeAt(0);
             }
             if (reorderStatusInternal != Edge::ReorderStatus::No) {
-                //if (!reuseReorderForReadonlyChildren(edge))
                 insertReorder(edge, reorderStatusInternal == Edge::ReorderStatus::Optimized);
             }
             updateEdge(i);
@@ -1387,6 +1358,7 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
 
                 std::atomic<int> nodes_remain(num_parallel_nodes);
                 auto run_nodes = [&](size_t i0, size_t i1) {
+                    PROFILE(_prof, std::to_string(i0));
                     for (size_t i = i0; i < i1; i++) {
                         auto& n = parallelNodes[i];
                         DEBUG_LOG("====parallel node", *n);
@@ -1417,7 +1389,10 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                     run_nodes(i0, i1);
                 }
                 // wait all nodes to finish
-                while (nodes_remain.load() > 0) {}
+                {
+                    PROFILE(_prof, "wait");
+                    while (nodes_remain.load() > 0) {}
+                }
             } else {
                 // fallback to serialize executor
                 for (auto& node : parallelNodes) {

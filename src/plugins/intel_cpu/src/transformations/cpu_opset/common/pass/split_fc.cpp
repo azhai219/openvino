@@ -32,6 +32,11 @@ ov::intel_cpu::SplitFC::SplitFC() {
         const auto& pattern_map = m.get_pattern_value_map();
 
         const auto& fc_node = pattern_map.at(fc_m).get_node_shared_ptr();
+        auto& rt_info = fc_node->get_rt_info();
+        if (rt_info.count("paralellDomain")) {
+            return false;
+        }
+
         // get input
         auto src_item = fc_node->get_input_node_shared_ptr(0);
         auto wgt_item = fc_node->get_input_node_shared_ptr(1);

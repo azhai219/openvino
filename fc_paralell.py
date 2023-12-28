@@ -4,80 +4,118 @@ from openvino.runtime import opset8 as opset
 from openvino.runtime.passes import Manager
 import numpy as np
 import sys
+import argparse
+
 
 def const(shape):
     w = np.random.rand(*shape).astype(np.float32)
     return op.Constant(w)
 
-def value(*shape):
-    return np.random.rand(*shape).astype(np.float32)
-
-def model(weight_value, bias_value = None):
+def model_parallel(weight_value, split_N = 2, num_layers = 1):
     # [N, K]
     N, K = weight_value.shape
 
     # input is [B,M,K]
     input = opset.parameter([-1, -1, K], Type.f32, name = 'in')
 
-    weight = op.Constant(weight_value)
-    mm = opset.matmul(input, weight, transpose_a = False, transpose_b = True)
-    if bias_value:
-        mm = opset.add(mm, op.Constant(bias_value))
+    cur_input = input
+    for layer in range(num_layers):
+        weight = op.Constant(weight_value.copy())
+        layername = f"fc{layer}"
 
-    Result = opset.result(mm, name='mm')
+        if split_N < 2:
+            output = opset.matmul(cur_input, weight, transpose_a = False, transpose_b = True, name=layername)
+            output.rt_info["paralellDomain"] = layername
+        else:
+            weights = opset.split(weight, 0, split_N)
+            mm_out = []
+            for i in range(split_N):
+                mmi = opset.matmul(cur_input, weights.output(i), transpose_a = False, transpose_b = True, name=f"{layername}_split{i}")
+                mmi.rt_info["paralellDomain"] = layername
+                mm_out.append(mmi)
+            output = opset.concat(mm_out, 2)            # concat along dim2
+        
+        output = opset.normalize_l2(output, 2, eps_mode = "add", eps=1e-6)
+        cur_input = output
+
+    Result = opset.result(output, name='mm')
     return Model([Result], [input], 'Model15')
 
 
-def model_parallel(weight_value, bias_value = None):
-    # [N, K]
-    N, K = weight_value.shape
+def main():
+    parser = argparse.ArgumentParser('')
+    parser.add_argument('-n', '--num_layers', type=int, default=10)
+    parser.add_argument('-p', '--perf_test_cnt', type=int, default=0)
+    parser.add_argument('-bf16', action="store_true")
+    parser.add_argument('prompt', type=str, nargs='?')
+    
+    args = parser.parse_args()
+    
+    core = Core()
 
-    # input is [B,M,K]
-    input = opset.parameter([-1, -1, K], Type.f32, name = 'in')
+    B=1
+    M=1
+    N=4096
+    K=4096
 
-    weight = op.Constant(weight_value)
+    np.random.seed(0)
+    input_value = np.random.rand(B, M, K).astype(np.float32) - 0.5
+    weight_value = np.random.rand(N, K).astype(np.float32) - 0.5
 
-    weights = opset.split(weight, 0, 2)
+    cur_input = input_value.reshape([B*M, K])
+    for layer in range(args.num_layers):
+        cur_input = np.matmul(cur_input, weight_value.transpose(1,0))
+    ref = cur_input.reshape([B,M,N])
 
-    mm0 = opset.matmul(input, weights.output(0), transpose_a = False, transpose_b = True, name="mm0")
-    mm1 = opset.matmul(input, weights.output(1), transpose_a = False, transpose_b = True, name="mm1")
+    #m = model(weight_value)
+    m0 = model_parallel(weight_value, 0, args.num_layers)
+    m1 = model_parallel(weight_value, 2, args.num_layers)
 
-    mm0.rt_info["paralellDomain"] = "mm"
-    mm1.rt_info["paralellDomain"] = "mm"
-    mm = opset.concat([mm0, mm1], 2)
+    config={
+        "NUM_STREAMS":1,
+        "INFERENCE_PRECISION_HINT":"bf16" if args.bf16 else "f32"
+    }
+    def infer_async(req, inputs):
+        req.start_async(inputs)
+        req.wait()
+        return req.get_output_tensor()
 
-    Result = opset.result(mm, name='mm')
-    return Model([Result], [input], 'Model15')
+    cm0 = core.compile_model(m0, "CPU", config)
+    request0 = cm0.create_infer_request()
+    act0 = np.array(infer_async(request0, [input_value]).data)
 
-core = Core()
+    cm1 = core.compile_model(m1, "CPU", config)
+    request1 = cm1.create_infer_request()
+    act1 = np.array(infer_async(request1, [input_value]).data)
 
-B=1
-M=1
-N=32*8*16
-K=4096
+    np.set_printoptions(suppress=True)
+    #np.set_printoptions(threshold=np.inf)
+    np.set_printoptions(linewidth=np.inf)
 
-input_value = np.random.rand(B, M, K).astype(np.float32)
-weight_value = np.random.rand(N, K).astype(np.float32)
-ref_out_value = np.matmul(input_value.reshape([B*M, K]), weight_value.transpose(1,0)).reshape([B,M,N])
+    def diff(a, b):
+        adiff = a-b
+        return f"{np.mean(adiff):.1f}, {np.std(adiff):.3f}"
 
-#m = model(weight_value)
-m = model_parallel(weight_value)
+    #print(f"ref : {diff(ref, ref)} {ref.shape} {ref.dtype} {ref}")
+    #print(f"act0: {diff(ref, act0)} {act0.shape} {act0.dtype} {act0}")
+    print(f"act1: {diff(act0, act1)} {act1.shape} {act1.dtype} {act1}")
 
-config={
-    "NUM_STREAMS":1,
-    "INFERENCE_PRECISION_HINT":"bf16"
-}
-cm = core.compile_model(m, "CPU", config)
+    if args.perf_test_cnt > 0:
+        print("performance test: ")
+        import time
+        t0 = time.time()
+        for i in range(args.perf_test_cnt):
+            a = infer_async(request0, [input_value])
+        t0 = time.time() - t0
+        print(f"t0={t0}")
 
-act_out_value = np.array(cm([input_value])[cm.output(0)].data)
+        time.sleep(0.1)
 
-allcose = np.allclose(ref_out_value, act_out_value)
-if not allcose:
-    print(ref_out_value)
-    print(act_out_value)
-    print(f"allclose={allcose}")
-    sys.exit(1)
-print(f"allclose={allcose}")
+        t1 = time.time()
+        for i in range(args.perf_test_cnt):
+            a = infer_async(request1, [input_value])
+        t1 = time.time() - t1
+        print(f"t1={t1}")
 
-#for i in range(1000):
-#    a = cm([input_value])
+if __name__ == '__main__':
+    main()

@@ -1325,7 +1325,7 @@ void Graph::InferDynamic(SyncInferRequest* request) {
         }
     }
 }
-void print_affinity() {
+void print_affinity(int i0) {
     cpu_set_t mask;
     long nproc, i;
     pid_t tid = syscall(SYS_gettid);
@@ -1338,7 +1338,7 @@ void print_affinity() {
     for (i = 0; i < nproc; i++) {
         ss << (CPU_ISSET(i, &mask) ? "X" : "_");
     }
-    DEBUG_LOG("==== ", tid, "  ", ss.str());
+    DEBUG_LOG("==== ", tid, "  ", ss.str(), ", ", i0);
 }
 
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
@@ -1357,11 +1357,14 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                     nsockets = 1;
 
                 std::atomic<int> nodes_remain(num_parallel_nodes);
-                auto run_nodes = [&](size_t i0, size_t i1) {
+                auto run_nodes = [&](int subStreamID, size_t i0, size_t i1) {
+                    //print_affinity(i0);
                     PROFILE(_prof, std::to_string(i0));
                     for (size_t i = i0; i < i1; i++) {
                         auto& n = parallelNodes[i];
                         DEBUG_LOG("====parallel node", *n);
+
+                        n->switchScratchPad(subStreamID);
                         if (n->isDynamicNode()) {
                             n->executeDynamic(stream);
                         } else {
@@ -1377,8 +1380,8 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                     size_t i0{0}, i1{0};
                     splitter(num_parallel_nodes, nsockets, socket_id, i0, i1);
                     cpuExecutor->run_sub_stream(
-                        [i0, i1, &run_nodes]() {
-                            run_nodes(i0, i1);
+                        [socket_id, i0, i1, &run_nodes]() {
+                            run_nodes(socket_id, i0, i1);
                         },
                         socket_id - 1);
                 }
@@ -1386,12 +1389,12 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                 {
                     size_t i0{0}, i1{0};
                     splitter(num_parallel_nodes, nsockets, 0, i0, i1);
-                    run_nodes(i0, i1);
+                    run_nodes(0, i0, i1);
                 }
-                // wait all nodes to finish
                 {
                     PROFILE(_prof, "wait");
-                    while (nodes_remain.load() > 0) {}
+                    while (nodes_remain.load() > 0) {
+                    }
                 }
             } else {
                 // fallback to serialize executor

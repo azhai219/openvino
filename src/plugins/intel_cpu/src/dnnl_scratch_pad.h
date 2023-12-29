@@ -22,7 +22,7 @@ public:
         mgrPtr = std::make_shared<DnnlMemoryMngr>(make_unique<MemoryMngrWithReuse>());
     }
 
-    MemoryPtr createScratchPadMem(const MemoryDescPtr& md) {
+    MemoryPtr createScratchPadMem(const MemoryDesc& md) {
         auto mem = std::make_shared<Memory>(eng, md, mgrPtr);
         return mem;
     }

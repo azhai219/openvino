@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "openvino/runtime/threading/cpu_streams_executor.hpp"
 #include "cache/multi_cache.h"
 #include "config.h"
 #include "dnnl_scratch_pad.h"
@@ -29,7 +30,19 @@ public:
           streamExecutor(streamExecutor),
           isGraphQuantizedFlag(isGraphQuantized) {
         rtParamsCache = std::make_shared<MultiCache>(config.rtCacheCapacity);
-        rtScratchPad = std::make_shared<DnnlScratchPad>(getEngine());
+
+        // primitive/executors can be shared across sub-stream
+        // but scratch pad cannot be shared.
+        numSubStreams = 1;
+        if (streamExecutor) {
+            auto cpuStreamExecutor = std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(streamExecutor);
+            auto nNumaNodes = static_cast<int>(cpuStreamExecutor->get_cores_mt_sockets().size());
+            if (numSubStreams < nNumaNodes)
+                numSubStreams = nNumaNodes;
+        }
+        for (int i = 0; i < numSubStreams; i++) {
+            rtScratchPads.push_back(std::make_shared<DnnlScratchPad>(getEngine()));
+        }
     }
 
     const Config& getConfig() const {
@@ -49,8 +62,8 @@ public:
         return rtParamsCache;
     }
 
-    DnnlScratchPadPtr getScratchPad() const {
-        return rtScratchPad;
+    DnnlScratchPadPtr getScratchPad(int subStreamID = 0) const {
+        return rtScratchPads[subStreamID];
     }
 
     static const dnnl::engine& getEngine();
@@ -63,6 +76,10 @@ public:
         return streamExecutor;
     }
 
+    int getNumSubStreams() const {
+        return numSubStreams;
+    }
+
 private:
     Config config;  // network-level config
 
@@ -70,9 +87,11 @@ private:
     WeightsSharing::Ptr weightsCache;         // per NUMA node caches for sharing weights data
 
     MultiCachePtr rtParamsCache;     // primitive cache
-    DnnlScratchPadPtr rtScratchPad;  // scratch pad
+    std::vector<DnnlScratchPadPtr> rtScratchPads;  // scratch pad (each sub-stream has its own copy)
 
     ov::threading::IStreamsExecutor::Ptr streamExecutor;   // stream executor for current graph
+
+    int numSubStreams;
 
     bool isGraphQuantizedFlag = false;
 };

@@ -1350,7 +1350,6 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                 std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(context->getStreamExecutor());
 
             if (cpuExecutor) {
-                auto cores_per_sockets = cpuExecutor->get_cores_mt_sockets();
                 int nsockets = cpuExecutor->get_cores_mt_sockets().size();
                 auto num_parallel_nodes = parallelNodes.size();
                 if (nsockets == 0)
@@ -1364,7 +1363,7 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                         auto& n = parallelNodes[i];
                         DEBUG_LOG("====parallel node", *n);
 
-                        n->switchScratchPad(subStreamID);
+                        n->toNumaNode(subStreamID);
                         if (n->isDynamicNode()) {
                             n->executeDynamic(stream);
                         } else {

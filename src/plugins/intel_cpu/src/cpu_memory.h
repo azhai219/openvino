@@ -6,6 +6,11 @@
 
 #include "memory_desc/dnnl_memory_desc.h"
 
+#if defined(__linux__)
+#    include <sys/syscall.h> /* Definition of SYS_* constants */
+#    include <unistd.h>
+#endif
+
 /**
  * @file contains a concept classes to work with memory/tensor/blob abstractions on plugin level.
  *
@@ -62,7 +67,7 @@ public:
  */
 class MemoryMngrWithReuse : public IMemoryMngr {
 public:
-    MemoryMngrWithReuse() : m_data(nullptr, release) {}
+    MemoryMngrWithReuse(int numa_node = 0) : m_data(nullptr, release), numa_node(numa_node) {}
     void* getRawPtr() const noexcept override;
     void setExtBuff(void* ptr, size_t size) override;
     bool resize(size_t size) override;
@@ -72,6 +77,7 @@ private:
     bool m_useExternalStorage = false;
     size_t m_memUpperBound = 0ul;
     std::unique_ptr<void, void (*)(void *)> m_data;
+    int numa_node;
 
     static void release(void *ptr);
     static void destroy(void *ptr);
@@ -433,6 +439,38 @@ private:
 using MemoryPtr = std::shared_ptr<IMemory>;
 using MemoryCPtr = std::shared_ptr<const IMemory>;
 using StringMemoryPtr = std::shared_ptr<StringMemory>;
+
+
+#if defined(__linux__)
+inline bool move_memory(void* data, size_t size, int targetNode, bool check_only = false) {
+    auto pagesize = getpagesize();
+    auto page_count = (size + pagesize - 1) / pagesize;
+    std::vector<void*> addr(page_count);
+    std::vector<int> nodes(page_count, targetNode);
+    std::vector<int> status(page_count, -123);
+    char* pages = reinterpret_cast<char*>((((uintptr_t)data) & ~((uintptr_t)(pagesize - 1))));
+    for (size_t i = 0; i < page_count; i++) {
+        addr[i] = pages + i * pagesize;
+    }
+    // https://man7.org/linux/man-pages/man2/move_pages.2.html
+    auto rc = syscall(__NR_move_pages, 0, page_count, addr.data(), check_only ? nullptr : nodes.data(), status.data(), 0);
+    if (rc < 0 && errno != ENOENT) {
+        perror("move_pages");
+        exit(1);
+    }
+    bool ret = true;
+    for (size_t i = 0; i < page_count; i++) {
+        if (status[i] != targetNode) {
+            std::cout << "page " << i << " @0x" << std::hex << addr[i] << std::dec << " status : " << status[i]
+                      << std::endl;
+            ret = false;
+        }
+    }
+    return ret;
+}
+#else
+inline bool move_memory(void* data, size_t size, int targetNode, bool check_only = false) {}
+#endif
 
 }   // namespace intel_cpu
 }   // namespace ov

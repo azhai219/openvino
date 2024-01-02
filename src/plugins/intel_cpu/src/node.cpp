@@ -954,6 +954,55 @@ MemoryPtr Node::prepareWeightMemory(DnnlMemoryDescPtr dstWeightDesc, DnnlMemoryD
     return ptr;
 }
 
+void Node::toNumaNode(int targetSubStreamID) {
+    static const int chk = []() {
+        auto* chkk = std::getenv("CHKK");
+        if (chkk)
+            return atoi(chkk);
+        return 0;
+    }();
+    if (subStreamID != targetSubStreamID) {
+        if (scratchpadMem) {
+            scratchpadMem = context->getScratchPad(targetSubStreamID)->createScratchPadMem(scratchpadMem->getDesc());
+            auto mem = scratchpadMem->getPrimitive();
+            primArgs[DNNL_ARG_SCRATCHPAD] = mem;
+        }
+
+        if (primArgs.count(DNNL_ARG_WEIGHTS)) {
+            auto& weight = primArgs[DNNL_ARG_WEIGHTS];
+            void* data = weight.get_data_handle();
+            auto desc = weight.get_desc();
+            auto size = desc.get_size();
+            if (!move_memory(data, size, targetSubStreamID))
+                std::cout << "move DNNL_ARG_WEIGHTS to node " << targetSubStreamID << " failed\n";
+        }
+        subStreamID = targetSubStreamID;
+    }
+
+    if (targetSubStreamID > 0) {
+        if (chk & 1) {
+            if (primArgs.count(DNNL_ARG_WEIGHTS)) {
+                auto& weight = primArgs[DNNL_ARG_WEIGHTS];
+                void* data = weight.get_data_handle();
+                auto desc = weight.get_desc();
+                auto size = desc.get_size();
+                if (!move_memory(data, size, targetSubStreamID, true))
+                    std::cout << targetSubStreamID << " DNNL_ARG_WEIGHTS failed \n";
+            }
+        }
+        if (chk & 2) {
+            if (primArgs.count(DNNL_ARG_SCRATCHPAD)) {
+                auto& weight = primArgs[DNNL_ARG_SCRATCHPAD];
+                void* data = weight.get_data_handle();
+                auto desc = weight.get_desc();
+                auto size = desc.get_size();
+                if (!move_memory(data, size, targetSubStreamID, true))
+                    std::cout << targetSubStreamID << " DNNL_ARG_SCRATCHPAD failed \n";
+            }
+        }
+    }
+}
+
 bool Node::isInPlace() const {
     if (inplace == InPlaceType::Unknown) {
         auto selected_pd = getSelectedPrimitiveDescriptor();

@@ -594,13 +594,7 @@ protected:
     std::vector <NodePtr> parallelWith;
     int subStreamID = 0;
 
-    void switchScratchPad(int targetSubStreamID) {
-        if (subStreamID != targetSubStreamID && scratchpadMem) {
-            scratchpadMem = context->getScratchPad(targetSubStreamID)->createScratchPadMem(scratchpadMem->getDesc());
-            primArgs[DNNL_ARG_SCRATCHPAD] = scratchpadMem->getPrimitive();
-            subStreamID = targetSubStreamID;
-        }
-    }
+    void toNumaNode(int targetSubStreamID);
 
     std::vector <impl_desc_type> customImplPriorities;
     std::vector <dnnl::memory::format_tag> inputMemoryFormatsFilter;

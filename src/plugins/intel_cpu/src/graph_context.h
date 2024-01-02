@@ -41,7 +41,7 @@ public:
                 numSubStreams = nNumaNodes;
         }
         for (int i = 0; i < numSubStreams; i++) {
-            rtScratchPads.push_back(std::make_shared<DnnlScratchPad>(getEngine()));
+            rtScratchPads.push_back(std::make_shared<DnnlScratchPad>(getEngine(), i));
         }
     }
 

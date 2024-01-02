@@ -227,6 +227,13 @@ bool MemoryMngrWithReuse::resize(size_t size) {
         m_useExternalStorage = false;
         m_data = decltype(m_data)(ptr, destroy);
         sizeChanged = true;
+
+        if (numa_node > 0) {
+            memset(ptr, 0, size);
+            if (!move_memory(ptr, size, numa_node)) {
+                std::cout << "MemoryMngrWithReuse move_memory to node " << numa_node << " failed\n";
+            }
+        }
     }
     return sizeChanged;
 }

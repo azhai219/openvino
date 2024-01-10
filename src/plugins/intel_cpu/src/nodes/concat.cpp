@@ -506,14 +506,13 @@ void Concat::execLastDimSpecCase() {
     const size_t iter_count = dst_memory.getSize() / dst_last_size;
     parallel_for(iter_count, [&](int i) {
         const size_t src0_offset = i * src0_last_size;
-        const size_t src1_offset = i * src1_last_size;
         const size_t dst_offset0 = i * dst_last_size;
-        const size_t dst_offset1 = i * dst_last_size + src0_last_size;
         cpu_memcpy(dst_ptr + dst_offset0, src0_ptr + src0_offset, src0_last_size);
+    });
+    parallel_for(iter_count, [&](int i) {
+        const size_t src1_offset = i * src1_last_size;
+        const size_t dst_offset1 = i * dst_last_size + src0_last_size;
         cpu_memcpy(dst_ptr + dst_offset1, src1_ptr + src1_offset, src1_last_size);
-        // for (size_t j = 0; j < nonZeroInShapes; j++) {
-        //     cpu_memcpy(dst_ptrs[j] + dst_off, src_ptrs[j] + i * channelsDataSize[j], channelsDataSize[j]);
-        // }
     });
 }
 

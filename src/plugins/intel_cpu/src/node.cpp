@@ -973,7 +973,7 @@ void Node::toNumaNode(int targetSubStreamID) {
             void* data = weight.get_data_handle();
             auto desc = weight.get_desc();
             auto size = desc.get_size();
-            if (!move_memory(data, size, targetSubStreamID))
+            if (!mbind_move(data, size, targetSubStreamID))
                 std::cout << "move DNNL_ARG_WEIGHTS to node " << targetSubStreamID << " failed\n";
         }
         subStreamID = targetSubStreamID;
@@ -986,7 +986,7 @@ void Node::toNumaNode(int targetSubStreamID) {
                 void* data = weight.get_data_handle();
                 auto desc = weight.get_desc();
                 auto size = desc.get_size();
-                if (!move_memory(data, size, targetSubStreamID, true))
+                if (!mbind_move(data, size, targetSubStreamID))
                     std::cout << targetSubStreamID << " DNNL_ARG_WEIGHTS failed \n";
             }
         }
@@ -996,7 +996,7 @@ void Node::toNumaNode(int targetSubStreamID) {
                 void* data = weight.get_data_handle();
                 auto desc = weight.get_desc();
                 auto size = desc.get_size();
-                if (!move_memory(data, size, targetSubStreamID, true))
+                if (!mbind_move(data, size, targetSubStreamID))
                     std::cout << targetSubStreamID << " DNNL_ARG_SCRATCHPAD failed \n";
             }
         }

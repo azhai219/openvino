@@ -472,5 +472,6 @@ inline bool move_memory(void* data, size_t size, int targetNode, bool check_only
 inline bool move_memory(void* data, size_t size, int targetNode, bool check_only = false) {}
 #endif
 
+bool mbind_move(void* data, size_t size, int targetNode);
 }   // namespace intel_cpu
 }   // namespace ov

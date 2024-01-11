@@ -132,6 +132,7 @@ endif()
 ov_mark_target_as_cc(${TARGET_NAME})
 
 target_link_libraries(${TARGET_NAME} PRIVATE dnnl
+                                             numa
                                              openvino::shape_inference
                                              openvino::snippets)
 

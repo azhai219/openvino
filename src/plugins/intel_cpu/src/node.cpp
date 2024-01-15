@@ -954,53 +954,24 @@ MemoryPtr Node::prepareWeightMemory(DnnlMemoryDescPtr dstWeightDesc, DnnlMemoryD
     return ptr;
 }
 
-void Node::toNumaNode(int targetSubStreamID) {
-    static const int chk = []() {
-        auto* chkk = std::getenv("CHKK");
-        if (chkk)
-            return atoi(chkk);
-        return 0;
-    }();
-    if (subStreamID != targetSubStreamID) {
-        if (scratchpadMem) {
-            scratchpadMem = context->getScratchPad(targetSubStreamID)->createScratchPadMem(scratchpadMem->getDesc());
-            auto mem = scratchpadMem->getPrimitive();
-            primArgs[DNNL_ARG_SCRATCHPAD] = mem;
-        }
+void Node::toNumaNode(int numaNodeID) {
+    if (curNumaNode == numaNodeID)
+        return;
 
-        if (primArgs.count(DNNL_ARG_WEIGHTS)) {
-            auto& weight = primArgs[DNNL_ARG_WEIGHTS];
-            void* data = weight.get_data_handle();
-            auto desc = weight.get_desc();
-            auto size = desc.get_size();
-            if (!mbind_move(data, size, targetSubStreamID))
-                std::cout << "move DNNL_ARG_WEIGHTS to node " << targetSubStreamID << " failed\n";
-        }
-        subStreamID = targetSubStreamID;
+    // create scratch pad from specified numa node
+    if (scratchpadMem) {
+        scratchpadMem = context->getScratchPad(numaNodeID)->createScratchPadMem(scratchpadMem->getDesc());
+        auto mem = scratchpadMem->getPrimitive();
+        primArgs[DNNL_ARG_SCRATCHPAD] = mem;
     }
 
-    if (targetSubStreamID > 0) {
-        if (chk & 1) {
-            if (primArgs.count(DNNL_ARG_WEIGHTS)) {
-                auto& weight = primArgs[DNNL_ARG_WEIGHTS];
-                void* data = weight.get_data_handle();
-                auto desc = weight.get_desc();
-                auto size = desc.get_size();
-                if (!mbind_move(data, size, targetSubStreamID))
-                    std::cout << targetSubStreamID << " DNNL_ARG_WEIGHTS failed \n";
-            }
-        }
-        if (chk & 2) {
-            if (primArgs.count(DNNL_ARG_SCRATCHPAD)) {
-                auto& weight = primArgs[DNNL_ARG_SCRATCHPAD];
-                void* data = weight.get_data_handle();
-                auto desc = weight.get_desc();
-                auto size = desc.get_size();
-                if (!mbind_move(data, size, targetSubStreamID))
-                    std::cout << targetSubStreamID << " DNNL_ARG_SCRATCHPAD failed \n";
-            }
-        }
-    }
+    // mbind constant prim args to numa nodes
+    if (primArgs.count(DNNL_ARG_WEIGHTS))
+        mbind_move(primArgs[DNNL_ARG_WEIGHTS], numaNodeID);
+    if (primArgs.count(DNNL_ARG_BIAS))
+        mbind_move(primArgs[DNNL_ARG_BIAS], numaNodeID);
+
+    curNumaNode = numaNodeID;
 }
 
 bool Node::isInPlace() const {

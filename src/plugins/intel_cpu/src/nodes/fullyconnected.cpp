@@ -629,6 +629,38 @@ void FullyConnected::prepareParams() {
     }
 }
 
+void FullyConnected::toNumaNode(int numaNodeID) {
+    if (curNumaNode == numaNodeID)
+        return;
+    curNumaNode = numaNodeID;
+
+#ifdef OV_CPU_WITH_MLAS
+    if (useMlas) {
+        mbind_move(mlasPackedPtr, numaNodeID);
+        if (withBiases) {
+            mbind_move(getParentEdgeAt(BIAS_ID)->getMemoryPtr(), numaNodeID);
+        }
+        return;
+    }
+#endif
+
+    if (execPtr) {
+        auto scratchpadMem = context->getScratchPad(numaNodeID)->createScratchPadMem(*execPtr->getScratchPadDesc());
+        auto mem = scratchpadMem->getPrimitive();
+        primArgs[DNNL_ARG_SCRATCHPAD] = mem;
+
+        if (primArgs.count(DNNL_ARG_WEIGHTS)) {
+            if (!mbind_move(primArgs[DNNL_ARG_WEIGHTS], numaNodeID))
+                std::cout << "move DNNL_ARG_WEIGHTS to node " << numaNodeID << " failed\n";
+        }
+
+        if (primArgs.count(DNNL_ARG_BIAS)) {
+            if (!mbind_move(primArgs[DNNL_ARG_BIAS], numaNodeID))
+                std::cout << "move DNNL_ARG_WEIGHTS to node " << numaNodeID << " failed\n";
+        }
+    }
+}
+
 #ifdef OV_CPU_WITH_MLAS
 void FullyConnected::executeMLAS() {
     const auto dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();

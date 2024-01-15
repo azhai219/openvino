@@ -63,6 +63,9 @@ public:
     void fuseDecompressionMultiply(const MemoryCPtr& memory);
     void fuseDecompressionSubtract(const MemoryCPtr& memory);
 
+protected:
+    void toNumaNode(int numaID) override;
+
 private:
     void createDescriptorInternal(const dnnl::memory::desc &inputDesc,
                                   const dnnl::memory::desc &outputDesc);

@@ -33,14 +33,14 @@ public:
 
         // primitive/executors can be shared across sub-stream
         // but scratch pad cannot be shared.
-        numSubStreams = 1;
+        numNumaNodes = 1;
         if (streamExecutor) {
             auto cpuStreamExecutor = std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(streamExecutor);
             auto nNumaNodes = static_cast<int>(cpuStreamExecutor->get_cores_mt_sockets().size());
-            if (numSubStreams < nNumaNodes)
-                numSubStreams = nNumaNodes;
+            if (numNumaNodes < nNumaNodes)
+                numNumaNodes = nNumaNodes;
         }
-        for (int i = 0; i < numSubStreams; i++) {
+        for (int i = 0; i < numNumaNodes; i++) {
             rtScratchPads.push_back(std::make_shared<DnnlScratchPad>(getEngine(), i));
         }
     }
@@ -63,6 +63,10 @@ public:
     }
 
     DnnlScratchPadPtr getScratchPad(int subStreamID = 0) const {
+        if (subStreamID < 0)
+            subStreamID = 0;
+        if (subStreamID >= numNumaNodes - 1)
+            subStreamID = numNumaNodes - 1;
         return rtScratchPads[subStreamID];
     }
 
@@ -76,8 +80,8 @@ public:
         return streamExecutor;
     }
 
-    int getNumSubStreams() const {
-        return numSubStreams;
+    int getnumNumaNodes() const {
+        return numNumaNodes;
     }
 
 private:
@@ -91,7 +95,7 @@ private:
 
     ov::threading::IStreamsExecutor::Ptr streamExecutor;   // stream executor for current graph
 
-    int numSubStreams;
+    int numNumaNodes;
 
     bool isGraphQuantizedFlag = false;
 };

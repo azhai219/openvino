@@ -603,6 +603,7 @@ bool mbind_move(void* data, size_t size, int targetNode) {
   auto mode = MPOL_DEFAULT;
   unsigned flags = 0;
   if (targetNode < 0) {
+    // restore default policy
     mask = -1;
     mode = MPOL_DEFAULT;
     flags = 0;
@@ -628,5 +629,19 @@ bool mbind_move(void* data, size_t size, int targetNode) {
   }
   return true;
 }
+
+bool mbind_move(const MemoryCPtr mem, int numaNodeID) {
+    void* data = mem->getData();
+    auto size = mem->getSize();
+    return mbind_move(data, size, numaNodeID);
+}
+
+bool mbind_move(const dnnl::memory mem, int numaNodeID) {
+    void* data = mem.get_data_handle();
+    auto desc = mem.get_desc();
+    auto size = desc.get_size();
+    return mbind_move(data, size, numaNodeID);
+}
+
 }   // namespace intel_cpu
 }   // namespace ov

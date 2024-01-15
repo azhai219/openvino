@@ -67,7 +67,7 @@ public:
  */
 class MemoryMngrWithReuse : public IMemoryMngr {
 public:
-    MemoryMngrWithReuse(int numa_node = 0) : m_data(nullptr, release), numa_node(numa_node) {}
+    MemoryMngrWithReuse(int numa_node = -1) : m_data(nullptr, release), numa_node(numa_node) {}
     void* getRawPtr() const noexcept override;
     void setExtBuff(void* ptr, size_t size) override;
     bool resize(size_t size) override;

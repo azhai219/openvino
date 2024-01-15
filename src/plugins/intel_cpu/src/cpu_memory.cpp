@@ -228,7 +228,7 @@ bool MemoryMngrWithReuse::resize(size_t size) {
         m_data = decltype(m_data)(ptr, destroy);
         sizeChanged = true;
 
-        if (numa_node > 0) {
+        if (numa_node >= 0) {
             memset(ptr, 0, size);
             if (!mbind_move(ptr, size, numa_node)) {
                 std::cout << "MemoryMngrWithReuse move_memory to node " << numa_node << " failed\n";
@@ -594,7 +594,7 @@ void StaticMemory::StaticMemoryMngr::unregisterMemory(Memory* memPtr) {
 
 #include <numaif.h>
 bool mbind_move(void* data, size_t size, int targetNode) {
-  std::cout << "mbind memory to node " << targetNode << "..." << std::endl;
+  std::cout << "mbind " << size/(1e6) << " MB memory to node " << targetNode << "..." << std::endl;
   auto pagesize = getpagesize();
   auto page_count = (size + pagesize - 1) / pagesize;
   char* pages = reinterpret_cast<char*>(

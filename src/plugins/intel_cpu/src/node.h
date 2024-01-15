@@ -592,7 +592,7 @@ protected:
     std::vector <NodePtr> fusedWith;
     std::vector <NodePtr> mergedWith;
     std::vector <NodePtr> parallelWith;
-    int subStreamID = 0;
+    int subStreamID = -1;
 
     void toNumaNode(int targetSubStreamID);
 
@@ -700,8 +700,11 @@ protected:
     }
 
     MemoryPtr getScratchPadMem(const DnnlMemoryDescPtr& desc) {
+        auto numaId = subStreamID;
+        if (numaId < 0)
+            numaId = 0;
         if (!scratchpadMem || !scratchpadMem->getDesc().isCompatible(*desc)) {
-            scratchpadMem = context->getScratchPad(subStreamID)->createScratchPadMem(*desc);
+            scratchpadMem = context->getScratchPad(numaId)->createScratchPadMem(*desc);
         }
         return scratchpadMem;
     }

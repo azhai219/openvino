@@ -18,7 +18,7 @@ class DnnlScratchPad {
     dnnl::engine eng;
 
 public:
-    DnnlScratchPad(dnnl::engine eng, int numa_node = 0) : eng(eng) {
+    DnnlScratchPad(dnnl::engine eng, int numa_node = -1) : eng(eng) {
         mgrPtr = std::make_shared<DnnlMemoryMngr>(make_unique<MemoryMngrWithReuse>(numa_node));
     }
 

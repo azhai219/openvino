@@ -228,9 +228,9 @@ bool MemoryMngrWithReuse::resize(size_t size) {
         m_data = decltype(m_data)(ptr, destroy);
         sizeChanged = true;
 
-        if (numa_node > 0) {
+        if (numa_node >= 0) {
             memset(ptr, 0, size);
-            if (!move_memory(ptr, size, numa_node)) {
+            if (!mbind_move(ptr, size, numa_node)) {
                 std::cout << "MemoryMngrWithReuse move_memory to node " << numa_node << " failed\n";
             }
         }
@@ -591,5 +591,57 @@ void StaticMemory::StaticMemoryMngr::registerMemory(Memory* memPtr) {
 void StaticMemory::StaticMemoryMngr::unregisterMemory(Memory* memPtr) {
     //do nothing
 }
+
+#include <numaif.h>
+bool mbind_move(void* data, size_t size, int targetNode) {
+  std::cout << "mbind " << size/(1e6) << " MB memory to node " << targetNode << "..." << std::endl;
+  auto pagesize = getpagesize();
+  auto page_count = (size + pagesize - 1) / pagesize;
+  char* pages = reinterpret_cast<char*>(
+      (((uintptr_t)data) & ~((uintptr_t)(pagesize - 1))));
+  unsigned long mask = 0;
+  auto mode = MPOL_DEFAULT;
+  unsigned flags = 0;
+  if (targetNode < 0) {
+    // restore default policy
+    mask = -1;
+    mode = MPOL_DEFAULT;
+    flags = 0;
+  } else {
+    mask = 1ul << targetNode;
+    mode = MPOL_BIND;
+    flags = MPOL_MF_MOVE | MPOL_MF_STRICT;
+  }
+#if 0
+  auto rc = syscall(__NR_mbind,
+                     reinterpret_cast<uintptr_t>(pages),
+                     static_cast<unsigned long>(page_count * pagesize),
+                     static_cast<int>(MPOL_BIND),
+                     reinterpret_cast<uintptr_t>(&mask),
+                     static_cast<unsigned long>(sizeof(mask) * 8),
+                     static_cast<unsigned>(MPOL_MF_MOVE | MPOL_MF_STRICT));
+#else
+  auto rc = mbind(pages, page_count * pagesize, MPOL_BIND, &mask,
+                  sizeof(mask) * 8, flags);
+#endif
+  if (rc < 0) {
+    perror("mbind");
+  }
+  return true;
+}
+
+bool mbind_move(const MemoryCPtr mem, int numaNodeID) {
+    void* data = mem->getData();
+    auto size = mem->getSize();
+    return mbind_move(data, size, numaNodeID);
+}
+
+bool mbind_move(const dnnl::memory mem, int numaNodeID) {
+    void* data = mem.get_data_handle();
+    auto desc = mem.get_desc();
+    auto size = desc.get_size();
+    return mbind_move(data, size, numaNodeID);
+}
+
 }   // namespace intel_cpu
 }   // namespace ov

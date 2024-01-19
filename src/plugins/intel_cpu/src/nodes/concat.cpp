@@ -315,7 +315,7 @@ bool Concat::needPrepareParams() const {
 }
 
 void Concat::prepareParams() {
-    if (canOptimizeNspc || isInPlace())
+    if (canOptimizeNspc || isInPlace() || canOptimizeLastDim)
         return;
 
     const auto& dstMemPtr = getChildEdgesAtPort(0)[0]->getMemoryPtr();
@@ -446,10 +446,16 @@ void Concat::initOptimalPrimitiveDescriptor() {
     }
     // check if selected Tensor descriptor has nspc layout and concat axis is C
     canOptimizeNspc = axis == channelAxis && getSelectedPrimitiveDescriptor()->getConfig().outConfs.front().getMemDesc()->hasLayoutType(LayoutType::nspc);
+    canOptimizeLastDim = (axis == (rank - 1)) && (getParentEdges().size() == 2);
 }
 
 void Concat::execute(dnnl::stream strm) {
     if (isInPlace()) {
+        return;
+    }
+
+    if (canOptimizeLastDim) {
+        execLastDimSpecCase();
         return;
     }
 
@@ -479,6 +485,38 @@ void Concat::execute(dnnl::stream strm) {
 
 ov::element::Type Concat::getRuntimePrecision() const {
     return getMaxPrecision(getInputPrecisions());
+}
+
+void Concat::execLastDimSpecCase() {
+    const size_t num_src = getParentEdges().size();
+    // dst
+    const auto& dst_memory = getChildEdgeAt(0)->getMemory();
+    uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst_memory.getData());
+    const size_t dataSize = DnnlExtensionUtils::sizeOfDataType(dst_memory.getDataType());
+    // src
+    const auto& src0_mem = getParentEdgesAtPort(0)[0]->getMemory();
+    uint8_t* src0_ptr = reinterpret_cast<uint8_t*>(src0_mem.getData());
+    const auto& src1_mem = getParentEdgesAtPort(1)[0]->getMemory();
+    uint8_t* src1_ptr = reinterpret_cast<uint8_t*>(src1_mem.getData());
+    // length to copy
+    const size_t src0_last_size = src0_mem.getStaticDims()[axis] * dataSize;
+    const size_t src1_last_size = src1_mem.getStaticDims()[axis] * dataSize;
+    // stride
+    // dst_last_dim = src0_last_dim + src1_last_dim
+    const size_t dst_last_size = dst_memory.getStaticDims()[axis] * dataSize;
+    // num loop
+    const size_t iter_count = dst_memory.getSize() / dst_last_size;
+    parallel_for(iter_count, [&](int i) {
+        const size_t src0_offset = i * src0_last_size;
+        const size_t src1_offset = i * src1_last_size;
+        const size_t dst_offset0 = i * dst_last_size;
+        const size_t dst_offset1 = i * dst_last_size + src0_last_size;
+        cpu_memcpy(dst_ptr + dst_offset0, src0_ptr + src0_offset, src0_last_size);
+        cpu_memcpy(dst_ptr + dst_offset1, src1_ptr + src1_offset, src1_last_size);
+        // for (size_t j = 0; j < nonZeroInShapes; j++) {
+        //     cpu_memcpy(dst_ptrs[j] + dst_off, src_ptrs[j] + i * channelsDataSize[j], channelsDataSize[j]);
+        // }
+    });
 }
 
 void Concat::execNspcSpecCase() {

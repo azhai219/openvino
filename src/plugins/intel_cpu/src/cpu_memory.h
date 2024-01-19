@@ -67,7 +67,7 @@ public:
  */
 class MemoryMngrWithReuse : public IMemoryMngr {
 public:
-    MemoryMngrWithReuse(int numa_node = 0) : m_data(nullptr, release), numa_node(numa_node) {}
+    MemoryMngrWithReuse(int numa_node = -1) : m_data(nullptr, release), numa_node(numa_node) {}
     void* getRawPtr() const noexcept override;
     void setExtBuff(void* ptr, size_t size) override;
     bool resize(size_t size) override;
@@ -471,6 +471,10 @@ inline bool move_memory(void* data, size_t size, int targetNode, bool check_only
 #else
 inline bool move_memory(void* data, size_t size, int targetNode, bool check_only = false) {}
 #endif
+
+bool mbind_move(void* data, size_t size, int numaNodeID);
+bool mbind_move(const MemoryCPtr mem, int numaNodeID);
+bool mbind_move(const dnnl::memory mem, int numaNodeID);
 
 }   // namespace intel_cpu
 }   // namespace ov

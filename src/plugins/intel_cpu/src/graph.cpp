@@ -234,9 +234,6 @@ void Graph::Replicate(const std::shared_ptr<const ov::Model> &model) {
 }
 
 void Graph::GroupParallelNodes() {
-    DEBUG_LOG("=============== 3333");
-    DEBUG_LOG(*this);
-
     std::map<std::string, std::vector<NodePtr>> pdomain_nodes;
     for (size_t k = 0; k < graphNodes.size(); k++) {
         auto& node = graphNodes[k];
@@ -298,8 +295,6 @@ void Graph::InitGraph() {
     ExtractExecutableNodes();
     SearchInternalStateNodes();
 
-    DEBUG_LOG("=============== 4444");
-    DEBUG_LOG(*this);
     status = hasDynNodes ? Status::ReadyDynamic : Status::ReadyStatic;
 }
 
@@ -1325,21 +1320,6 @@ void Graph::InferDynamic(SyncInferRequest* request) {
         }
     }
 }
-void print_affinity(int i0) {
-    cpu_set_t mask;
-    long nproc, i;
-    pid_t tid = syscall(SYS_gettid);
-    if (sched_getaffinity(tid, sizeof(cpu_set_t), &mask) == -1) {
-        perror("sched_getaffinity");
-        assert(false);
-    }
-    nproc = sysconf(_SC_NPROCESSORS_ONLN);
-    std::stringstream ss;
-    for (i = 0; i < nproc; i++) {
-        ss << (CPU_ISSET(i, &mask) ? "X" : "_");
-    }
-    DEBUG_LOG("==== ", tid, "  ", ss.str(), ", ", i0);
-}
 
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
     if (!node->parallelWith.empty()) {
@@ -1357,7 +1337,6 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
 
                 std::atomic<int> nodes_remain(num_parallel_nodes);
                 auto run_nodes = [&](int subStreamID, size_t i0, size_t i1) {
-                    //print_affinity(i0);
                     PROFILE(_prof, std::to_string(i0));
                     for (size_t i = i0; i < i1; i++) {
                         auto& n = parallelNodes[i];
@@ -1373,7 +1352,6 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                     }
                 };
 
-                DEBUG_LOG("nsockets=", nsockets);
                 // enqueue (nsockets-1) sub stream tasks
                 for (int socket_id = 1; socket_id < nsockets; socket_id++) {
                     size_t i0{0}, i1{0};
@@ -1398,7 +1376,6 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
             } else {
                 // fallback to serialize executor
                 for (auto& node : parallelNodes) {
-                    DEBUG_LOG("==== fb parallel node", *node);
                     if (node->isDynamicNode()) {
                         node->executeDynamic(stream);
                     } else {

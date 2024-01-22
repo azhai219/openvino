@@ -45,13 +45,7 @@ ov::intel_cpu::SplitFC::SplitFC() {
             return false;
         }
 
-        // auto w_shape = fc_node->get_input_shape(1);
-
-        // auto shape_a = fc_node->get_input_partial_shape(0);
-        // auto shape_b = fc_node->get_input_partial_shape(1);
         auto out_shape = fc_node->get_output_partial_shape(0);
-
-        // std::cout << "a x b = c : " << shape_a.to_string() << " x " << shape_b.to_string() << " = " << out_shape.to_string() << "\n";
 
         // split weight
         constexpr size_t split_dim = 0; // split happens on the first dimension.
@@ -81,7 +75,6 @@ ov::intel_cpu::SplitFC::SplitFC() {
         if (concat_shape != out_shape) {
             return false;
         }
-        // std::cout << "[dbg] new shape: " << concat_shape.to_string() << "\n";
         replace_node(fc_node, concat_node);
         return true;
     };

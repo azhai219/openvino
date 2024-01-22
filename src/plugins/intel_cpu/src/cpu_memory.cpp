@@ -594,7 +594,6 @@ void StaticMemory::StaticMemoryMngr::unregisterMemory(Memory* memPtr) {
 
 #include <numaif.h>
 bool mbind_move(void* data, size_t size, int targetNode) {
-  std::cout << "mbind " << size/(1e6) << " MB memory to node " << targetNode << "..." << std::endl;
   auto pagesize = getpagesize();
   auto page_count = (size + pagesize - 1) / pagesize;
   char* pages = reinterpret_cast<char*>(
@@ -612,20 +611,10 @@ bool mbind_move(void* data, size_t size, int targetNode) {
     mode = MPOL_BIND;
     flags = MPOL_MF_MOVE | MPOL_MF_STRICT;
   }
-#if 0
-  auto rc = syscall(__NR_mbind,
-                     reinterpret_cast<uintptr_t>(pages),
-                     static_cast<unsigned long>(page_count * pagesize),
-                     static_cast<int>(MPOL_BIND),
-                     reinterpret_cast<uintptr_t>(&mask),
-                     static_cast<unsigned long>(sizeof(mask) * 8),
-                     static_cast<unsigned>(MPOL_MF_MOVE | MPOL_MF_STRICT));
-#else
   auto rc = mbind(pages, page_count * pagesize, MPOL_BIND, &mask,
                   sizeof(mask) * 8, flags);
-#endif
   if (rc < 0) {
-    perror("mbind");
+    perror("mbind failed");
   }
   return true;
 }

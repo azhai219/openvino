@@ -36,13 +36,6 @@ public:
     virtual std::shared_ptr<ov::threading::ITaskExecutor> get_executor(const std::string& id) = 0;
 
     /**
-     * @brief Returns streams executor by unique identificator
-     * @param id An unique identificator of device (Usually string representation of TargetDevice)
-     * @return A shared pointer to existing IStreamsExecutor or nullptr
-     */
-    virtual std::shared_ptr<ov::threading::IStreamsExecutor> get_stream_executor(const std::string& id) = 0;
-
-    /**
      * @brief Returns idle cpu streams executor
      *
      * @param config Streams executor config

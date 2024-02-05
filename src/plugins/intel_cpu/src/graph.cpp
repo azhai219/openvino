@@ -1330,49 +1330,18 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
                 std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(context->getStreamExecutor());
 
             if (cpuExecutor) {
-                int nsockets = cpuExecutor->get_cores_mt_sockets().size();
                 auto num_parallel_nodes = parallelNodes.size();
-                if (nsockets == 0)
-                    nsockets = 1;
+                ParalleMtNuma(num_parallel_nodes, cpuExecutor, [&](int subStreamID, size_t i) {
+                    auto& n = parallelNodes[i];
+                    DEBUG_LOG("====parallel node", *n);
 
-                std::atomic<int> nodes_remain(num_parallel_nodes);
-                auto run_nodes = [&](int subStreamID, size_t i0, size_t i1) {
-                    PROFILE(_prof, std::to_string(i0));
-                    for (size_t i = i0; i < i1; i++) {
-                        auto& n = parallelNodes[i];
-                        DEBUG_LOG("====parallel node", *n);
-
-                        n->toNumaNode(subStreamID);
-                        if (n->isDynamicNode()) {
-                            n->executeDynamic(stream);
-                        } else {
-                            n->execute(stream);
-                        }
-                        nodes_remain--;
+                    n->toNumaNode(subStreamID);
+                    if (n->isDynamicNode()) {
+                        n->executeDynamic(stream);
+                    } else {
+                        n->execute(stream);
                     }
-                };
-
-                // enqueue (nsockets-1) sub stream tasks
-                for (int socket_id = 1; socket_id < nsockets; socket_id++) {
-                    size_t i0{0}, i1{0};
-                    splitter(num_parallel_nodes, nsockets, socket_id, i0, i1);
-                    cpuExecutor->run_sub_stream(
-                        [socket_id, i0, i1, &run_nodes]() {
-                            run_nodes(socket_id, i0, i1);
-                        },
-                        socket_id - 1);
-                }
-                // run in main stream (current socket)
-                {
-                    size_t i0{0}, i1{0};
-                    splitter(num_parallel_nodes, nsockets, 0, i0, i1);
-                    run_nodes(0, i0, i1);
-                }
-                {
-                    PROFILE(_prof, "wait");
-                    while (nodes_remain.load() > 0) {
-                    }
-                }
+                });
             } else {
                 // fallback to serialize executor
                 for (auto& node : parallelNodes) {
@@ -1393,6 +1362,43 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
             node->executeDynamic(stream);
         } else {
             node->execute(stream);
+        }
+    }
+}
+
+void Graph::ParalleMtNuma(size_t num_nodes,
+                          ov::threading::CPUStreamsExecutor::Ptr executor,
+                          const std::function<void(size_t, size_t)>& func) const {
+    if (num_nodes > 1) {
+        std::atomic<int> nodes_remain(num_nodes);
+        // enqueue (nsockets-1) sub stream tasks
+        for (size_t socket_id = 1; socket_id < num_nodes; socket_id++) {
+            size_t i0{0}, i1{0};
+            splitter(num_nodes, num_nodes, socket_id, i0, i1);
+            executor->run_sub_stream(
+                [socket_id, i0, i1, &func, &nodes_remain]() {
+                    PROFILE(_prof, std::to_string(i0));
+                    for (size_t i = i0; i < i1; i++) {
+                        func(socket_id, i);
+                        nodes_remain--;
+                    }
+                },
+                socket_id - 1);
+        }
+        // run in main stream (current socket)
+        {
+            size_t i0{0}, i1{0};
+            splitter(num_nodes, num_nodes, static_cast<size_t>(0), i0, i1);
+            PROFILE(_prof, std::to_string(i0));
+            for (size_t i = i0; i < i1; i++) {
+                func(0, i);
+                nodes_remain--;
+            }
+        }
+        {
+            PROFILE(_prof, "wait");
+            while (nodes_remain.load() > 0) {
+            }
         }
     }
 }

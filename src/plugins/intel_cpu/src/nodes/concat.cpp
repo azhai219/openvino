@@ -488,7 +488,6 @@ ov::element::Type Concat::getRuntimePrecision() const {
 }
 
 void Concat::execLastDimSpecCase() {
-    const size_t num_src = getParentEdges().size();
     // dst
     const auto& dst_memory = getChildEdgeAt(0)->getMemory();
     uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(dst_memory.getData());

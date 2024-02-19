@@ -228,12 +228,6 @@ public:
     virtual int get_socket_id() = 0;
 
     /**
-     * @brief Return numbers of cores in different sockets
-     * @return Numbers of cores per socket, or return empty vector
-     */
-    virtual std::vector<int> get_cores_mt_sockets() = 0;
-
-    /**
      * @brief Execute the task in the current thread using streams executor configuration and constraints
      * @param task A task to start
      */
@@ -245,28 +239,6 @@ public:
      * @param id Sub stream id
      */
     virtual void run_sub_stream(Task task, int id) = 0;
-
-    /**
-     * @brief Execute ov::Task in parallel on multiple sockets
-     * @param nthr number of threads
-     * @param func A task to start
-     */
-    virtual void parallel_mt_sockets(int nthr, const std::function<void(size_t)>& func) = 0;
-
-    /**
-     * @brief Execute all of the tasks and waits for its completion.
-     *        Default run_and_wait_sub_stream() method implementation uses run_sub_stream() pure virtual method
-     *        and higher level synchronization primitives from STL.
-     *        The task is wrapped into std::packaged_task which returns std::future.
-     *        std::packaged_task will call the task and signal to std::future that the task is finished
-     *        or the exception is thrown from task
-     *        Than std::future is used to wait for task execution completion and
-     *        task exception extraction
-     * @note run_and_wait_sub_stream() does not copy or capture tasks!
-     * @param tasks A vector of tasks to execute
-     * @param id Sub stream id
-     */
-    void run_and_wait_sub_stream(const std::vector<Task>& tasks, int id);
 };
 
 }  // namespace threading

@@ -36,7 +36,7 @@ public:
         numNumaNodes = 1;
         if (streamExecutor) {
             auto cpuStreamExecutor = std::dynamic_pointer_cast<ov::threading::CPUStreamsExecutor>(streamExecutor);
-            auto nNumaNodes = static_cast<int>(cpuStreamExecutor->get_cores_mt_sockets().size());
+            auto nNumaNodes = get_num_numa_nodes();
             if (numNumaNodes < nNumaNodes)
                 numNumaNodes = nNumaNodes;
         }

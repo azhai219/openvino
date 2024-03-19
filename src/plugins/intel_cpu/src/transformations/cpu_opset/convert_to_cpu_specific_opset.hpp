@@ -15,6 +15,7 @@
 #include "common/pass/convert_to_swish_cpu.hpp"
 #include "common/pass/move_fc_reshape_to_weights.hpp"
 #include "common/pass/split_fc.hpp"
+#include "common/pass/experiment_split_fc.hpp"
 #include "transformations/convert_precision.hpp"
 #include "transformations/utils/utils.hpp"
 #include "common/pass/rnn_sequences_optimization.hpp"
@@ -34,7 +35,13 @@ inline void ConvertToCPUSpecificOpset(std::shared_ptr<ov::Model> &nGraphFunc, in
     CPU_REGISTER_PASS_COMMON(manager, ConvertMatMulToFC);
     CPU_REGISTER_PASS_X64(manager, MoveFCReshapeToWeights);
     if (subStreamNum >= 1) {
-        CPU_REGISTER_PASS_COMMON(manager, SplitFC, subStreamNum);
+        auto split_mode = std::getenv("EXP_SPLIT");
+        if (split_mode != nullptr) {
+            std::cout << "[=== TRY EXPERIMENT SPLIT ===]\n";
+            CPU_REGISTER_PASS_COMMON(manager, ExperimentSplitFC, subStreamNum);
+        } else {
+            CPU_REGISTER_PASS_COMMON(manager, SplitFC, subStreamNum);
+        }
     }
     CPU_REGISTER_PASS_X64(manager, ov::pass::Validate);
     CPU_REGISTER_PASS_COMMON(manager, AlignMatMulInputRanks);

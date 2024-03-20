@@ -15,6 +15,7 @@
 #include "common/pass/convert_to_swish_cpu.hpp"
 #include "common/pass/move_fc_reshape_to_weights.hpp"
 #include "common/pass/split_fc.hpp"
+#include "common/pass/split_fc_batch.hpp"
 #include "common/pass/experiment_split_fc.hpp"
 #include "transformations/convert_precision.hpp"
 #include "transformations/utils/utils.hpp"
@@ -36,10 +37,17 @@ inline void ConvertToCPUSpecificOpset(std::shared_ptr<ov::Model> &nGraphFunc, in
     CPU_REGISTER_PASS_X64(manager, MoveFCReshapeToWeights);
     if (subStreamNum >= 1) {
         auto split_mode = std::getenv("EXP_SPLIT");
-        if (split_mode != nullptr) {
-            std::cout << "[=== TRY EXPERIMENT SPLIT ===]\n";
-            CPU_REGISTER_PASS_COMMON(manager, ExperimentSplitFC, subStreamNum);
+        if (split_mode) {
+            auto mode = std::string(split_mode);
+            if (mode == "exp") {
+                std::cout << "[=== TRY EXPERIMENT SPLIT ===]\n";
+                CPU_REGISTER_PASS_COMMON(manager, ExperimentSplitFC, subStreamNum);
+            } else if (mode == "batch") {
+                std::cout << "[=== TRY BATCH SPLIT ===]\n";
+                CPU_REGISTER_PASS_COMMON(manager, SplitFCBatch, subStreamNum);
+            }
         } else {
+            std::cout << "[=== TRY REGULAR SPLIT ===]\n";
             CPU_REGISTER_PASS_COMMON(manager, SplitFC, subStreamNum);
         }
     }

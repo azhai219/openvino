@@ -15,12 +15,12 @@
 #include "openvino/op/variadic_split.hpp"
 #include "transformations/cpu_opset/common/op/fully_connected.hpp"
 
-#include "split_fc.hpp"
+#include "split_fc_batch.hpp"
 
 #include "itt.hpp"
 
-ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
-    MATCHER_SCOPE(SplitFC);
+ov::intel_cpu::SplitFCBatch::SplitFCBatch(int sub_stream_num) {
+    MATCHER_SCOPE(SplitFCBatch);
     auto fc_m = ov::pass::pattern::wrap_type<ov::intel_cpu::FullyConnectedNode>();
 
     ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
@@ -66,7 +66,7 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
             bool reshape_special_zero;
             std::shared_ptr<Node> multiply_node;
             if (with_reshape) {
-                // return false; // reshape pattern will affect the INT4 precison. so don't split in this pattern for now.
+                return false; // reshape pattern will affect the INT4 precison. so don't split in this pattern for now.
                 auto reshape_pattern = reshape_node->get_input_node_shared_ptr(1);
                 auto reshape_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(reshape_pattern);
                 if (!reshape_pattern || !reshape_const) {
@@ -166,7 +166,7 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
             // get input
             auto wgt_item = fc_node->get_input_node_shared_ptr(1);
             if (wgt_item->is_dynamic()) {
-	            return false;
+                return false;
             }
 
             // split weight
@@ -174,7 +174,7 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
 
             // needn't to split fc when the dim is 0.
             if (split_dim_range <= 1) {
-	            return false;
+                return false;
             }
 
             // We should use VariadicSplit to split input for FC.

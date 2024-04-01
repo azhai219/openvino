@@ -35,7 +35,7 @@ public:
             if (numNumaNodes < nNumaNodes)
                 numNumaNodes = nNumaNodes;
         }
-        for (int i = 0; i < numNumaNodes; i++) {
+        for (int i = 0; i <= numNumaNodes; i++) {
             rtScratchPads.push_back(std::make_shared<DnnlScratchPad>(getEngine(), i));
         }
     }

@@ -24,6 +24,7 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
     auto fc_m = ov::pass::pattern::wrap_type<ov::intel_cpu::FullyConnectedNode>();
 
     ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
+        std::cout << "=========\n";
         const auto& pattern_map = m.get_pattern_value_map();
 
         const auto& fc_node = pattern_map.at(fc_m).get_node_shared_ptr();
@@ -42,11 +43,46 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
         // parts will be splited according the sub stream num.
         int split_num = sub_stream_num + 1;
 
+        /*
         auto split_parts = [](int len, int n) {
             int average = len / n;
             std::vector<int> parts(n, average);
             parts.back() = len - average * (n - 1);
             return parts;
+        };
+        */
+
+        // constexpr int core_num = 48;
+        auto split_parts = [](int len, int n) {
+            int average = len / n;
+            int remainer = len % 48;
+            if (remainer == 0) {
+                int nums = len / 48;
+                bool nums_is_odd = nums % 2;
+                if (nums_is_odd) {
+                    std::vector<int> parts(n);
+                    parts[0] = (nums + 1) / 2 * 48;
+                    parts[1] = (nums - 1) / 2 * 48;
+                    return parts;
+                } else {
+                    std::vector<int> parts(n, average);
+                    return parts;
+                }
+            } else {
+                std::vector<int> parts(n+1);
+                parts.back() = remainer;
+                int nums = len / 48;
+                bool nums_is_odd = nums % 2;
+                if (nums_is_odd) {
+                    parts[0] = (nums + 1) / 2 * 48;
+                    parts[1] = (nums - 1) / 2 * 48;
+                    return parts;
+                } else {
+                    parts[0] = average;
+                    parts[1] = average;
+                    return parts;
+                }
+            }
         };
 
         // TODO: support transpose
@@ -56,7 +92,7 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
 
         // 1. If the model is INT4 format, split the INT4 pattern for the FuseFCAndWeightsDecompression.
         // 2. If the model is NOT INT4 format, split the weight.
-        std::vector<ov::Output<ov::Node>> wgt_node_vec(split_num);
+        std::vector<ov::Output<ov::Node>> wgt_node_vec; // (split_num);
         if (ov::is_type<ov::op::v1::Multiply>(fc_weight_node) || ov::is_type<ov::op::v1::Reshape>(fc_weight_node)) {
             // INT4 model should consider two patterns, including with Reshape Node and without Reshape Node.
             const auto reshape_node = ov::as_type_ptr<ov::op::v1::Reshape>(fc_weight_node);
@@ -100,8 +136,10 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
             }
 
             // We should use VariadicSplit to split the input for FC.
-            std::vector<std::vector<int32_t>> split_reshape_pattern_vec(split_num);
             auto fc_dim_vec = split_parts(split_dim_range, split_num);
+            split_num = fc_dim_vec.size();
+            std::vector<std::vector<int32_t>> split_reshape_pattern_vec(split_num);
+            std::cout << "[dbg] splited dim: " << fc_dim_vec[0] << " - " << fc_dim_vec[1] << " ::: " << wgt_item->get_shape()[-1] << "\n";
             auto split_length = ov::op::v0::Constant::create<int32_t>(ov::element::i32, ov::Shape{static_cast<size_t>(split_num)}, fc_dim_vec);
 
             auto split_constants = [&](const std::shared_ptr<ov::Node>& constant) {
@@ -155,9 +193,11 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
                 auto mul_node = std::make_shared<ov::op::v1::Multiply>(sub_node, split_muls[i]);
                 if (reshape_node) {
                     auto reshape_pattern = ov::op::v0::Constant::create<int32_t>(ov::element::i32, ov::Shape{2}, split_reshape_pattern_vec[i]);
-                    wgt_node_vec[i] = std::make_shared<ov::op::v1::Reshape>(mul_node, reshape_pattern, reshape_node->get_special_zero());
+                    // wgt_node_vec[i] = std::make_shared<ov::op::v1::Reshape>(mul_node, reshape_pattern, reshape_node->get_special_zero());
+                    wgt_node_vec.push_back(std::make_shared<ov::op::v1::Reshape>(mul_node, reshape_pattern, reshape_node->get_special_zero()));
                 } else {
-                    wgt_node_vec[i] = mul_node;
+                    // wgt_node_vec[i] = mul_node;
+                    wgt_node_vec.push_back(mul_node);
                 }
             }
         } else {
@@ -175,13 +215,15 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
 
             // We should use VariadicSplit to split input for FC.
             auto fc_dim_vec = split_parts(split_dim_range, split_num);
+            split_num = fc_dim_vec.size();
             auto split_length = ov::op::v0::Constant::create<int32_t>(ov::element::i32, ov::Shape{static_cast<size_t>(split_num)}, fc_dim_vec);
             auto split_wgts = std::make_shared<ov::op::v1::VariadicSplit>(wgt_item,
                                                                           split_dim_node,
                                                                           split_length);
 
             for (int i = 0; i < split_num; ++i) {
-                wgt_node_vec[i] = split_wgts->output(i);
+                // wgt_node_vec[i] = split_wgts->output(i);
+                wgt_node_vec.push_back(split_wgts->output(i));
             }
         }
 

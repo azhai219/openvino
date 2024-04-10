@@ -1,0 +1,109 @@
+// Copyright (C) 2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+//
+
+#pragma once
+#include <mpi.h>
+#include "oneapi/ccl.hpp"
+
+namespace ov {
+namespace intel_cpu {
+
+class Messenger {
+private:
+    Messenger() {
+        atexit(Messenger::mpi_finalize);
+        int sameHostnames = helperInit();
+    }
+
+    ~Messenger() {
+        if (pcomm != nullptr) {
+            helperFreePCOMM();
+        }
+    }
+
+public:
+    static Messenger &getInstance() {
+        static Messenger instance;
+        return instance;
+    }
+
+    int getRank() {
+        return world_rank;
+    }
+
+    int getSize() {
+        return world_size;
+    }
+
+private:
+    Messenger(const Messenger &messenger) = delete;
+    Messenger &operator=(const Messenger &messenger) = delete;
+
+    static void mpi_finalize() {
+        int is_finalized = 0;
+        MPI_Finalized(&is_finalized);
+
+        if (!is_finalized) {
+            MPI_Finalize();
+        }
+    }
+
+private:
+    int world_size;
+    int world_rank;
+    int world_color;
+    bool localRanksFlags;
+    ccl::communicator *pcomm;
+
+    int helperInit() {
+        ccl::init();
+
+        MPI_Init(NULL, NULL);
+        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+        // world_color = world_rank / tpSize = world_rank / (world_size / ppSize)
+        // like: world_color = 0~7 / (8 / 4), XFT_PIPELINE_STAGE = ppSize = 4; tpSize = 2
+        //       world_rank = 0, 1,  ->  world_color = ppRank = 0, 0,  ->  tpRank = 0, 1;
+        //                    2, 3,                             1, 1,               0, 1;
+        //                    4, 5,                             2, 2,               0, 1;
+        //                    6, 7;                             3, 3;               0, 1;
+        // world_color = world_rank / (world_size / world_color);
+        // MPI_Comm row_comm;
+        // MPI_Comm_split(MPI_COMM_WORLD, *world_color, *world_rank, &row_comm);
+
+        // int row_size, row_rank;
+        // MPI_Comm_size(row_comm, &row_size);
+        // MPI_Comm_rank(row_comm, &row_rank);
+
+        ccl::shared_ptr_class<ccl::kvs> kvs;
+        ccl::kvs::address_type mainAddr;
+
+        if (world_rank == 0) {
+            kvs = ccl::create_main_kvs();
+            mainAddr = kvs->get_address();
+            MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+        } else {
+            MPI_Bcast((void *)mainAddr.data(), mainAddr.size(), MPI_BYTE, 0, MPI_COMM_WORLD);
+            kvs = ccl::create_kvs(mainAddr);
+        }
+
+        pcomm = new ccl::communicator(ccl::create_communicator(world_size, world_rank, kvs));
+
+        world_size = pcomm->size();
+        world_rank = pcomm->rank();
+
+        return 0;
+    }
+
+    void helperAllgatherv(const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts, ccl::datatype ccl_dtype) {
+        ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, ccl_dtype, *pcomm).wait();
+    }
+
+    void helperFreePCOMM() {
+        delete pcomm;
+    }
+};
+}
+}

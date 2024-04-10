@@ -9,6 +9,7 @@
 #include <openvino/op/constant.hpp>
 
 #include "common/cpu_convert.h"
+#include "common/ccl_messenger.hpp"
 #include "dnnl_extension_utils.h"
 #include "executors/memory_arguments.hpp"
 #include "graph_context.h"

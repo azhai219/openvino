@@ -54,6 +54,8 @@ ov_add_test_target(
             gtest_main
             gmock
             dnnl
+            mpi
+            ccl
             openvino::shape_inference
             openvino_runtime_s
             unit_test_utils

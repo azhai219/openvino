@@ -9,6 +9,7 @@
 #include <openvino/op/constant.hpp>
 
 #include "common/cpu_convert.h"
+#include "common/cpu_memcpy.h"
 #include "common/ccl_messenger.hpp"
 #include "dnnl_extension_utils.h"
 #include "executors/memory_arguments.hpp"
@@ -84,6 +85,13 @@ bool FullyConnected::canBeExecutedInInt8() const {
 }
 
 ExecutorPtr FullyConnected::createExecutor() {
+    if (auto env = getenv("ENABLE_CCL")) {
+        auto w_rank = Messenger::getInstance().getRank();
+        auto w_size = Messenger::getInstance().getSize();
+        auto dstMemoryBuffer = getDstMemoryAtPort(0);
+        auto select_dst = split(dstMemoryBuffer, -1, w_rank, w_size);
+        memory[ARG_DST] = select_dst;
+    }
     const auto& executor = factory->make(memory);
     getSelectedPrimitiveDescriptor()->setImplementationType(executor->implType());
 
@@ -94,8 +102,20 @@ void FullyConnected::prepareParams() {
     executor = createExecutor();
 }
 
+void FullyConnected::merge(const IMemory &src, IMemory &dst, const int dim, int w_rank, int w_size) {
+    // TODO
+}
+
 void FullyConnected::execute(dnnl::stream strm) {
     executor->execute(memory);
+    if (auto env = getenv("ENABLE_CCL")) {
+        auto dst_part = memory[ARG_DST];
+        auto dst = getDstMemoryAtPort(0);
+        // TODO: merge data
+        // update memory[ARG_DST] by rank and size
+        memory[ARG_DST] = dst;
+        auto dst_merge = memory[ARG_DST];
+    }
 }
 
 void FullyConnected::executeDynamicImpl(dnnl::stream strm) {
@@ -263,11 +283,70 @@ void FullyConnected::initSupportedPrimitiveDescriptors() {
     supportedPrimitiveDescriptors.emplace_back(nodeConfig, impl_desc_type::undef);
 }
 
+MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_size) {
+    auto desc = src->getDescPtr();
+    auto shape = src->getShape();
+    auto dims = shape.getDims();
+    auto prec = src->getPrecision();
+    if (dim < 0) {
+        dim += dims.size();
+    }
+    if (shape.isDynamic()) {
+        const auto& pshape = shape.toPartialShape();
+        if (pshape[dim].is_dynamic()) {
+            OPENVINO_THROW("Can't split data with dynamic shapes");
+        }
+        auto new_pshape = pshape;
+        new_pshape[dim] = pshape[dim] / w_size;
+        auto new_desc = std::make_shared<CpuBlockedMemoryDesc>(prec, Shape{new_pshape});
+        MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc);
+        return ptr;
+    }
+    auto element_size = prec.size();
+    VectorDims new_dims = dims;
+    new_dims[dim] = dims[dim] / w_size;
+    const int stride = dims[dim] / w_size;
+    auto new_desc = desc->cloneWithNewDims(new_dims, true);
+    MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc);
+    // copy
+    auto srcPtr = static_cast<uint8_t*>(src->getData());
+    auto dstPtr = static_cast<uint8_t*>(ptr->getData());
+    auto mem_size = src->getSize();
+    auto channel_size = dims[dim] * element_size;
+    const int step = mem_size / channel_size;
+    const auto copySize = stride * element_size;
+    for (int i = 0; i < step; ++i) {
+        int dst_offset = i * stride;
+        int src_offset = i * stride * 2 + w_rank * stride;
+        cpu_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
+    }
+    return ptr;
+}
+
 void FullyConnected::createPrimitive() {
     memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
-    memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
-    memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : emptyMemory;
-    memory[ARG_DST] = getDstMemoryAtPort(0);
+    if (auto env = getenv("ENABLE_CCL")) {
+        auto w_rank = Messenger::getInstance().getRank();
+        auto w_size = Messenger::getInstance().getSize();
+        auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
+        auto dst = getDstMemoryAtPort(0);
+        auto select_wgt = split(wgt, 0, w_rank, w_size);
+        auto select_dst = split(dst, -1, w_rank, w_size);
+        memory[ARG_WEI] = select_wgt;
+        memory[ARG_DST] = select_dst;
+        if (attrs.withBias) {
+            auto bias = getSrcMemoryAtPort(BIAS_ID);
+            auto select_bias = split(bias, -1, w_rank, w_size);
+            memory[ARG_BIAS] = select_bias;
+        } else {
+            memory[ARG_BIAS] = emptyMemory;
+        }
+    } else {
+        memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
+        memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : emptyMemory;
+        memory[ARG_DST] = getDstMemoryAtPort(0);
+    }
+
     // @todo should we preconfigure only for dynamic shapes?
     // Since for static shapes primitive is created in scope of compile_model() anyway
     factory->preconfigure(memory);

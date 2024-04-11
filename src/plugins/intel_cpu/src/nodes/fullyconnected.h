@@ -62,6 +62,9 @@ public:
     void fuseDecompressionMultiply(const MemoryCPtr& memory);
     void fuseDecompressionSubtract(const MemoryCPtr& memory);
 
+    MemoryPtr split(const MemoryPtr src, int dim, int w_rank, int w_size);
+    void merge(const IMemory &src, IMemory &dst, const int dim, int w_rank, int w_size);
+
 protected:
     void toNumaNodeImpl(int numaID) override;
 

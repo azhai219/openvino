@@ -14,9 +14,11 @@ source oneccl/build/_install/env/setvars.sh
 ```
 
 ## run LLM and profile:
+- `OV_CPU_PROFILE`: turn on the `profiler` tool at runtime
+- `ENABLE_CCL`: turn on the `ccl` at runtime.
 
 ```bash
-OV_CPU_PROFILE=1 mpirun \
+OV_CPU_PROFILE=1 ENABLE_CCL=1 mpirun \
     -n 1 env RANK_INFO=0of2 numactl --all -C 0-7 -m 0 python ./testLLM.py --bf16 /mnt/disk2/tingqian/models/Mistral-7B-Instruct-v0.1-OV/FP16 -b 1 1 4 1 4 : \
     -n 1 env RANK_INFO=1of2 numactl --all -C 48-55 -m 1 python ./testLLM.py --bf16 /mnt/disk2/tingqian/models/Mistral-7B-Instruct-v0.1-OV/FP16 -b 1 1 4 1 4
 ```

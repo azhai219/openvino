@@ -27,6 +27,8 @@ extern "C" {
 #    endif
 }
 
+#include "nodes/common/ccl_messenger.hpp"
+
 namespace ov {
 namespace intel_cpu {
 
@@ -70,11 +72,20 @@ struct TscCounter {
     TscCounter() {
         static std::once_flag flag;
         std::call_once(flag, [&]() {
-            uint64_t start_ticks = __rdtsc();
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            tsc_ticks_per_second = (__rdtsc() - start_ticks);
-            std::cout << "[OV_CPU_PROFILE] tsc_ticks_per_second = " << tsc_ticks_per_second << std::endl;
-            tsc_ticks_base = __rdtsc();
+            auto rank = Messenger::getInstance().getRank();
+
+            if (rank == 0) {
+                uint64_t start_ticks = __rdtsc();
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                tsc_ticks_per_second = (__rdtsc() - start_ticks);
+                std::cout << "[OV_CPU_PROFILE] tsc_ticks_per_second = " << tsc_ticks_per_second << std::endl;
+                tsc_ticks_base = __rdtsc();
+                MPI_Bcast((void *)&tsc_ticks_per_second, sizeof(tsc_ticks_per_second), MPI_BYTE, 0, MPI_COMM_WORLD);
+                MPI_Bcast((void *)&tsc_ticks_base, sizeof(tsc_ticks_base), MPI_BYTE, 0, MPI_COMM_WORLD);
+            } else {
+                MPI_Bcast((void *)&tsc_ticks_per_second, sizeof(tsc_ticks_per_second), MPI_BYTE, 0, MPI_COMM_WORLD);
+                MPI_Bcast((void *)&tsc_ticks_base, sizeof(tsc_ticks_base), MPI_BYTE, 0, MPI_COMM_WORLD);
+            }
         });
     }
 };
@@ -87,7 +98,6 @@ public:
 struct ProfilerFinalizer {
     std::mutex g_mutex;
     std::set<ProfilerBase*> all_managers;
-    const char* dump_file_name = "ov_profile.json";
     bool dump_file_over = false;
     bool not_finalized = true;
     std::ofstream fw;
@@ -106,33 +116,52 @@ struct ProfilerFinalizer {
         if (dump_file_over || all_managers.empty())
             return;
 
-        // start dump
-        fw.open(dump_file_name, std::ios::out);
-        fw << "{\n";
-        fw << "\"schemaVersion\": 1,\n";
-        fw << "\"traceEvents\": [\n";
-        fw.flush();
+        auto rank = Messenger::getInstance().getRank();
+        auto world_size = Messenger::getInstance().getSize();
+        std::string dump_file_name = "ov_profile_mpi.json";
+
+        if (rank == 0) {
+            // start dump
+            fw.open(dump_file_name, std::ios::out);
+            fw << "{\n";
+            fw << "\"schemaVersion\": 1,\n";
+            fw << "\"traceEvents\": [\n";
+            fw.flush();
+        } else {
+            uint8_t syn_token = 1;
+            MPI_Recv(&syn_token, 1, MPI_BYTE, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            fw.open(dump_file_name, std::ios::out | std::ios::app);
+        }
 
         for (auto& pthis : all_managers) {
             pthis->save(fw, tsc);
         }
         all_managers.clear();
 
-        fw << R"({
-            "name": "Profiler End",
-            "ph": "i",
-            "s": "g",
-            "pid": "Traces",
-            "tid": "Trace OV Profiler",
-            "ts":)"
-           << tsc.tsc_to_usec(__rdtsc()) << "}",
-            fw << "]\n";
-        fw << "}\n";
+        if (rank == world_size - 1) {
+            fw << R"({
+                "name": "Profiler End",
+                "ph": "i",
+                "s": "g",
+                "pid": "Traces",
+                "tid": "Trace OV Profiler",
+                "ts":)"
+            << tsc.tsc_to_usec(__rdtsc()) << "}",
+                fw << "]\n";
+            fw << "}\n";
+        }
         auto total_size = fw.tellp();
         fw.close();
+
+        // other rank can output
+        if (rank == 0 && rank + 1 < world_size) {
+            uint8_t syn_token = 1;
+            MPI_Send(&syn_token, 1, MPI_BYTE, rank + 1, 0, MPI_COMM_WORLD);
+        }
+
         dump_file_over = true;
         not_finalized = false;
-        std::cout << "[OV_CPU_PROFILE] Dumpped " << total_size / (1024 * 1024) << " (MB) to " << dump_file_name
+        std::cout << "[OV_CPU_PROFILE] rank #" << rank << " Dumpped " << total_size / (1024 * 1024) << " (MB) to " << dump_file_name
                   << std::endl;
     }
 
@@ -165,8 +194,10 @@ public:
         if (!str_enable)
             str_enable = "0";
         enabled = atoi(str_enable) > 0;
-        if (enabled)
-            serial = detail::ProfilerFinalizer::get().register_manager(this);
+        if (enabled) {
+            serial = Messenger::getInstance().getRank() * 100;
+            serial += detail::ProfilerFinalizer::get().register_manager(this);
+        }
     }
     ~Profiler() {
         detail::ProfilerFinalizer::get().finalize();

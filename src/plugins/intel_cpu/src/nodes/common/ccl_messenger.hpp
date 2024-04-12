@@ -100,12 +100,17 @@ private:
         return 0;
     }
 
-    void helperAllgatherv(const float *sendBuf, size_t count, float *recvBuf, const std::vector<long unsigned int> &recvCounts, ccl::datatype ccl_dtype) {
-        ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, ccl_dtype, *pcomm).wait();
-    }
-
     void helperFreePCOMM() {
         delete pcomm;
+    }
+
+public:
+    void helperAllgatherv(const  void *sendBuf, size_t count, void *recvBuf, const std::vector<long unsigned int> &recvCounts) {
+        ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, ccl::datatype::float32, *pcomm).wait();
+    }
+
+    void helperAllgathervBF16(const void* sendBuf, size_t count, void* recvBuf, const std::vector<long unsigned int> &recvCounts) {
+        ccl::allgatherv(sendBuf, count, recvBuf, recvCounts, ccl::datatype::bfloat16, *pcomm).wait();
     }
 };
 }

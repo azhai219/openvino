@@ -102,18 +102,79 @@ void FullyConnected::prepareParams() {
     executor = createExecutor();
 }
 
-void FullyConnected::merge(const IMemory &src, IMemory &dst, const int dim, int w_rank, int w_size) {
-    // TODO
-}
+// void FullyConnected::merge(MemoryPtr dst, std::vector<void*> buf, ov::element::Type prec) {
+//     auto buf_l = static_cast<uint8_t*>(buf[0]);
+//     auto buf_r = static_cast<uint8_t*>(buf[1]);
+//     auto dst_ptr = static_cast<uint8_t*>(dst->getData());
+//
+//     auto mem_size = dst->getSize();
+//     auto dims = dst->getStaticDims();
+//     auto element_size = prec.size();
+//     const int dim = 0;
+//     auto channel_size = dims[dim] * element_size;
+//     const int step = mem_size / channel_size;
+//     const int w_size = buf.size();
+//     const int stride = dims[dim] / w_size;
+//     const auto copySize = stride * element_size;
+//     for (int i = 0; i < step; ++i) {
+//         int dst_offset_l = i * stride * w_size;
+//         int dst_offset_r = i * stride * w_size + 1 * stride;
+//         cpu_memcpy(dst_ptr + dst_offset_l, buf_l + stride, copySize);
+//         cpu_memcpy(dst_ptr + dst_offset_r, buf_l + stride, copySize);
+//     }
+// }
 
 void FullyConnected::execute(dnnl::stream strm) {
     executor->execute(memory);
     if (auto env = getenv("ENABLE_CCL")) {
-        auto dst_part = memory[ARG_DST];
+        // std::cout << "=== execute ===\n";
+        auto w_rank = Messenger::getInstance().getRank();
+        auto w_size = Messenger::getInstance().getSize();
+        auto send_mem = memory[ARG_DST];
+        auto send_ptr = send_mem->getData();
+        auto prec = send_mem->getPrecision();
+        auto ele_num = send_mem->getSize() / send_mem->getPrecision().size();
+
+        // auto recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDesc());
+        // auto recv_ptr = recv_mem->getData();
+        auto recv_mem = getDstMemoryAtPort(0);
+        auto recv_ptr = recv_mem->getData();
+
+        // std::cout << "[debug] send shape: " << send_mem->getShape().toString() << "\n";
+        // std::cout << "[debug] recv shape: " << recv_mem->getShape().toString() << "\n";
+        // allgather
+        std::vector<long unsigned int> recvCount(w_size, ele_num);
+        if (prec == ov::element::bf16) {
+            // std::cout << "[debug] bf16 gather\n";
+            Messenger::getInstance().helperAllgathervBF16(send_ptr, ele_num, recv_ptr, recvCount);
+        } else if (prec == ov::element::f32) {
+            // std::cout << "[debug] fp32 gather\n";
+            Messenger::getInstance().helperAllgatherv(send_ptr, ele_num, recv_ptr, recvCount);
+        } else {
+            printf("Unsupported data type for reduceAdd.\n");
+            exit(-1);
+        }
+        /*
+        std::cout << "[debug] gather...\n";
+        std::vector<void*> buffers;
+        if (w_rank == 0) {
+            buffers.push_back(send_ptr);
+            buffers.push_back(recv_ptr);
+        } else if (w_rank == 1) {
+            buffers.push_back(recv_ptr);
+            buffers.push_back(send_ptr);
+        } else {
+            printf("Unsupported w_rank.\n");
+            exit(-1);
+        }
         auto dst = getDstMemoryAtPort(0);
-        // TODO: merge data
+        std::cout << "[debug] 00 dst shape: " << dst->getShape().toString() << "\n";
+        merge(dst, buffers, prec);
         // update memory[ARG_DST] by rank and size
+        std::cout << "[debug] 11 dst shape: " << dst->getShape().toString() << "\n";
         memory[ARG_DST] = dst;
+        */
+        memory[ARG_DST] = recv_mem;
         auto dst_merge = memory[ARG_DST];
     }
 }

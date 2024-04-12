@@ -62,6 +62,7 @@ public:
     void fuseDecompressionMultiply(const MemoryCPtr& memory);
     void fuseDecompressionSubtract(const MemoryCPtr& memory);
 
+    MemoryPtr split_horizon(const MemoryPtr src, int dim, int w_rank, int w_size);
     MemoryPtr split(const MemoryPtr src, int dim, int w_rank, int w_size);
     // void merge(MemoryPtr dst, const std::vector<void*> buf, ov::element::Type prec);
 

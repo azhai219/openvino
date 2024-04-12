@@ -88,9 +88,9 @@ ExecutorPtr FullyConnected::createExecutor() {
     if (auto env = getenv("ENABLE_CCL")) {
         auto w_rank = Messenger::getInstance().getRank();
         auto w_size = Messenger::getInstance().getSize();
-        auto dstMemoryBuffer = getDstMemoryAtPort(0);
-        auto select_dst = split(dstMemoryBuffer, -1, w_rank, w_size);
-        memory[ARG_DST] = select_dst;
+        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
+        auto select_src = split(srcMemoryBuffer, -1, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
     }
     const auto& executor = factory->make(memory);
     getSelectedPrimitiveDescriptor()->setImplementationType(executor->implType());
@@ -137,25 +137,31 @@ void FullyConnected::execute(dnnl::stream strm) {
 
         // auto recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDesc());
         // auto recv_ptr = recv_mem->getData();
-        auto recv_mem = getDstMemoryAtPort(0);
-        auto recv_ptr = recv_mem->getData();
+        // auto recv_mem = getDstMemoryAtPort(0);
+        // auto recv_ptr = recv_mem->getData();
+        // std::cout << "send ptr: " << send_ptr << ", recv ptr: " << recv_ptr << "\n";
+        // std::memset(recv_ptr, 0, recv_mem->getSize());
+        // cpu_memcpy(recv_ptr, send_ptr, send_mem->getSize());
 
         // std::cout << "[debug] send shape: " << send_mem->getShape().toString() << "\n";
         // std::cout << "[debug] recv shape: " << recv_mem->getShape().toString() << "\n";
         // allgather
-        std::vector<long unsigned int> recvCount(w_size, ele_num);
+        // std::vector<long unsigned int> recvCount(w_size, ele_num);
+        // std::cout << "[debug] size: " << ele_num << "\n";
         if (prec == ov::element::bf16) {
             // std::cout << "[debug] bf16 gather\n";
-            Messenger::getInstance().helperAllgathervBF16(send_ptr, ele_num, recv_ptr, recvCount);
+            // Messenger::getInstance().helperAllgathervBF16(send_ptr, ele_num, recv_ptr, recvCount);
+            Messenger::getInstance().helperAllreduceBF16(send_ptr, send_ptr, ele_num);
         } else if (prec == ov::element::f32) {
             // std::cout << "[debug] fp32 gather\n";
-            Messenger::getInstance().helperAllgatherv(send_ptr, ele_num, recv_ptr, recvCount);
+            // Messenger::getInstance().helperAllgatherv(send_ptr, ele_num, recv_ptr, recvCount);
+            Messenger::getInstance().helperAllreduce(send_ptr, send_ptr, ele_num);
         } else {
             printf("Unsupported data type for reduceAdd.\n");
             exit(-1);
         }
+        // std::cout << "[debug] gather...\n";
         /*
-        std::cout << "[debug] gather...\n";
         std::vector<void*> buffers;
         if (w_rank == 0) {
             buffers.push_back(send_ptr);
@@ -174,8 +180,7 @@ void FullyConnected::execute(dnnl::stream strm) {
         std::cout << "[debug] 11 dst shape: " << dst->getShape().toString() << "\n";
         memory[ARG_DST] = dst;
         */
-        memory[ARG_DST] = recv_mem;
-        auto dst_merge = memory[ARG_DST];
+        memory[ARG_DST] = send_mem;
     }
 }
 
@@ -344,6 +349,36 @@ void FullyConnected::initSupportedPrimitiveDescriptors() {
     supportedPrimitiveDescriptors.emplace_back(nodeConfig, impl_desc_type::undef);
 }
 
+MemoryPtr FullyConnected::split_horizon(const MemoryPtr src, int dim, int w_rank, int w_size) {
+    auto desc = src->getDescPtr();
+    auto shape = src->getShape();
+    auto dims = shape.getDims();
+    auto prec = src->getPrecision();
+    if (dim < 0) {
+        dim += dims.size();
+    }
+    auto element_size = prec.size();
+    VectorDims new_dims = dims;
+    new_dims[dim] = dims[dim] / w_size;
+    // const int stride = dims[dim] / w_size;
+    auto new_desc = desc->cloneWithNewDims(new_dims, true);
+    auto srcPtr = src->getData();
+    const size_t stride = src->getSize() * element_size / w_size; 
+
+    MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc, srcPtr + w_rank * stride);
+    // copy
+    // auto dstPtr = static_cast<uint8_t*>(ptr->getData());
+    // auto mem_size = src->getSize();
+    // auto channel_size = dims[dim] * element_size;
+    // const int step = mem_size / channel_size;
+    // const auto copySize = stride * element_size;
+    // for (int i = 0; i < step; ++i) {
+    //     int dst_offset = i * stride;
+    //     int src_offset = i * stride * 2 + w_rank * stride;
+    //     cpu_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
+    // }
+    return ptr;
+}
 MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_size) {
     auto desc = src->getDescPtr();
     auto shape = src->getShape();
@@ -385,28 +420,31 @@ MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_
 }
 
 void FullyConnected::createPrimitive() {
-    memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
     if (auto env = getenv("ENABLE_CCL")) {
         auto w_rank = Messenger::getInstance().getRank();
         auto w_size = Messenger::getInstance().getSize();
+        auto src = getSrcMemoryAtPort(DATA_ID);
         auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
         auto dst = getDstMemoryAtPort(0);
-        auto select_wgt = split(wgt, 0, w_rank, w_size);
-        auto select_dst = split(dst, -1, w_rank, w_size);
+        // std::cout << "[debug] src shape: " << src->getShape().toString() << "\n";
+        // std::cout << "[debug] wgt shape: " << wgt->getShape().toString() << "\n";
+        // std::cout << "[debug] dst shape: " << dst->getShape().toString() << "\n";
+        auto select_src= split(src, -1, w_rank, w_size);
+        auto select_wgt = split_horizon(wgt, -1, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
         memory[ARG_WEI] = select_wgt;
-        memory[ARG_DST] = select_dst;
-        if (attrs.withBias) {
+        if (attrs.withBias && w_rank == 0) {
             auto bias = getSrcMemoryAtPort(BIAS_ID);
-            auto select_bias = split(bias, -1, w_rank, w_size);
-            memory[ARG_BIAS] = select_bias;
+            memory[ARG_BIAS] = getSrcMemoryAtPort(BIAS_ID);
         } else {
             memory[ARG_BIAS] = emptyMemory;
         }
     } else {
+        memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
         memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
         memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : emptyMemory;
-        memory[ARG_DST] = getDstMemoryAtPort(0);
     }
+    memory[ARG_DST] = getDstMemoryAtPort(0);
 
     // @todo should we preconfigure only for dynamic shapes?
     // Since for static shapes primitive is created in scope of compile_model() anyway

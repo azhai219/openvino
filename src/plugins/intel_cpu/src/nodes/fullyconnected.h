@@ -84,6 +84,8 @@ private:
     ExecutorFactoryPtr<FCAttrs, node::FullyConnected> factory;
     ExecutorPtr executor = nullptr;
     std::string errorPrefix;
+    int w_rank = -1;
+    int w_size = -1;
 };
 
 }  // namespace node

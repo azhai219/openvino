@@ -62,6 +62,10 @@ bool FullyConnected::isSupportedOperation(const std::shared_ptr<const ov::Node>&
 FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphContext::CPtr context)
     : Node(op, context, FCShapeInferFactory(op)),
       errorPrefix("FullyConnected node with name '" + getName() + "'") {
+    if (auto env = getenv("ENABLE_CCL")) {
+        w_rank = Messenger::getInstance().getRank();
+        w_size = Messenger::getInstance().getSize();
+    }
     std::string errorMessage;
     if (!isSupportedOperation(op, errorMessage))
         OPENVINO_THROW_NOT_IMPLEMENTED(errorMessage);
@@ -85,10 +89,8 @@ bool FullyConnected::canBeExecutedInInt8() const {
 }
 
 ExecutorPtr FullyConnected::createExecutor() {
+    auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
     if (auto env = getenv("ENABLE_CCL")) {
-        auto w_rank = Messenger::getInstance().getRank();
-        auto w_size = Messenger::getInstance().getSize();
-        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
     }
@@ -102,84 +104,30 @@ void FullyConnected::prepareParams() {
     executor = createExecutor();
 }
 
-// void FullyConnected::merge(MemoryPtr dst, std::vector<void*> buf, ov::element::Type prec) {
-//     auto buf_l = static_cast<uint8_t*>(buf[0]);
-//     auto buf_r = static_cast<uint8_t*>(buf[1]);
-//     auto dst_ptr = static_cast<uint8_t*>(dst->getData());
-//
-//     auto mem_size = dst->getSize();
-//     auto dims = dst->getStaticDims();
-//     auto element_size = prec.size();
-//     const int dim = 0;
-//     auto channel_size = dims[dim] * element_size;
-//     const int step = mem_size / channel_size;
-//     const int w_size = buf.size();
-//     const int stride = dims[dim] / w_size;
-//     const auto copySize = stride * element_size;
-//     for (int i = 0; i < step; ++i) {
-//         int dst_offset_l = i * stride * w_size;
-//         int dst_offset_r = i * stride * w_size + 1 * stride;
-//         cpu_memcpy(dst_ptr + dst_offset_l, buf_l + stride, copySize);
-//         cpu_memcpy(dst_ptr + dst_offset_r, buf_l + stride, copySize);
-//     }
-// }
-
 void FullyConnected::execute(dnnl::stream strm) {
-    executor->execute(memory);
     if (auto env = getenv("ENABLE_CCL")) {
-        // std::cout << "=== execute ===\n";
-        auto w_rank = Messenger::getInstance().getRank();
-        auto w_size = Messenger::getInstance().getSize();
-        auto send_mem = memory[ARG_DST];
+        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
+        auto select_src = split(srcMemoryBuffer, -1, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
+    }
+
+    executor->execute(memory);
+
+    if (auto env = getenv("ENABLE_CCL")) {
+        auto send_mem = memory[ARG_SRC];
         auto send_ptr = send_mem->getData();
         auto prec = send_mem->getPrecision();
-        auto ele_num = send_mem->getSize() / send_mem->getPrecision().size();
-
-        // auto recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDesc());
-        // auto recv_ptr = recv_mem->getData();
-        // auto recv_mem = getDstMemoryAtPort(0);
-        // auto recv_ptr = recv_mem->getData();
-        // std::cout << "send ptr: " << send_ptr << ", recv ptr: " << recv_ptr << "\n";
-        // std::memset(recv_ptr, 0, recv_mem->getSize());
-        // cpu_memcpy(recv_ptr, send_ptr, send_mem->getSize());
-
-        // std::cout << "[debug] send shape: " << send_mem->getShape().toString() << "\n";
-        // std::cout << "[debug] recv shape: " << recv_mem->getShape().toString() << "\n";
-        // allgather
-        // std::vector<long unsigned int> recvCount(w_size, ele_num);
-        // std::cout << "[debug] size: " << ele_num << "\n";
+        auto ele_num = send_mem->getSize() / prec.size();
         if (prec == ov::element::bf16) {
-            // std::cout << "[debug] bf16 gather\n";
             // Messenger::getInstance().helperAllgathervBF16(send_ptr, ele_num, recv_ptr, recvCount);
             Messenger::getInstance().helperAllreduceBF16(send_ptr, send_ptr, ele_num);
         } else if (prec == ov::element::f32) {
-            // std::cout << "[debug] fp32 gather\n";
             // Messenger::getInstance().helperAllgatherv(send_ptr, ele_num, recv_ptr, recvCount);
             Messenger::getInstance().helperAllreduce(send_ptr, send_ptr, ele_num);
         } else {
             printf("Unsupported data type for reduceAdd.\n");
             exit(-1);
         }
-        // std::cout << "[debug] gather...\n";
-        /*
-        std::vector<void*> buffers;
-        if (w_rank == 0) {
-            buffers.push_back(send_ptr);
-            buffers.push_back(recv_ptr);
-        } else if (w_rank == 1) {
-            buffers.push_back(recv_ptr);
-            buffers.push_back(send_ptr);
-        } else {
-            printf("Unsupported w_rank.\n");
-            exit(-1);
-        }
-        auto dst = getDstMemoryAtPort(0);
-        std::cout << "[debug] 00 dst shape: " << dst->getShape().toString() << "\n";
-        merge(dst, buffers, prec);
-        // update memory[ARG_DST] by rank and size
-        std::cout << "[debug] 11 dst shape: " << dst->getShape().toString() << "\n";
-        memory[ARG_DST] = dst;
-        */
         memory[ARG_DST] = send_mem;
     }
 }
@@ -363,22 +311,12 @@ MemoryPtr FullyConnected::split_horizon(const MemoryPtr src, int dim, int w_rank
     // const int stride = dims[dim] / w_size;
     auto new_desc = desc->cloneWithNewDims(new_dims, true);
     auto srcPtr = src->getData();
-    const size_t stride = src->getSize() * element_size / w_size; 
+    const size_t stride = src->getSize() / w_size; 
 
     MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc, srcPtr + w_rank * stride);
-    // copy
-    // auto dstPtr = static_cast<uint8_t*>(ptr->getData());
-    // auto mem_size = src->getSize();
-    // auto channel_size = dims[dim] * element_size;
-    // const int step = mem_size / channel_size;
-    // const auto copySize = stride * element_size;
-    // for (int i = 0; i < step; ++i) {
-    //     int dst_offset = i * stride;
-    //     int src_offset = i * stride * 2 + w_rank * stride;
-    //     cpu_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
-    // }
     return ptr;
 }
+
 MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_size) {
     auto desc = src->getDescPtr();
     auto shape = src->getShape();
@@ -421,14 +359,9 @@ MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_
 
 void FullyConnected::createPrimitive() {
     if (auto env = getenv("ENABLE_CCL")) {
-        auto w_rank = Messenger::getInstance().getRank();
-        auto w_size = Messenger::getInstance().getSize();
         auto src = getSrcMemoryAtPort(DATA_ID);
         auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
         auto dst = getDstMemoryAtPort(0);
-        // std::cout << "[debug] src shape: " << src->getShape().toString() << "\n";
-        // std::cout << "[debug] wgt shape: " << wgt->getShape().toString() << "\n";
-        // std::cout << "[debug] dst shape: " << dst->getShape().toString() << "\n";
         auto select_src= split(src, -1, w_rank, w_size);
         auto select_wgt = split_horizon(wgt, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;

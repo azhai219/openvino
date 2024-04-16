@@ -89,10 +89,13 @@ bool FullyConnected::canBeExecutedInInt8() const {
 }
 
 ExecutorPtr FullyConnected::createExecutor() {
-    auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
     if (auto env = getenv("ENABLE_CCL")) {
+        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
+
+        // TODO: update dst shape once output shape is changed.
+        memory[ARG_DST] = getDstMemoryAtPort(0);
     }
     const auto& executor = factory->make(memory);
     getSelectedPrimitiveDescriptor()->setImplementationType(executor->implType());
@@ -114,7 +117,7 @@ void FullyConnected::execute(dnnl::stream strm) {
     executor->execute(memory);
 
     if (auto env = getenv("ENABLE_CCL")) {
-        auto send_mem = memory[ARG_SRC];
+        auto send_mem = memory[ARG_DST];
         auto send_ptr = send_mem->getData();
         auto prec = send_mem->getPrecision();
         auto ele_num = send_mem->getSize() / prec.size();
@@ -364,6 +367,8 @@ void FullyConnected::createPrimitive() {
         auto dst = getDstMemoryAtPort(0);
         auto select_src= split(src, -1, w_rank, w_size);
         auto select_wgt = split_horizon(wgt, -1, w_rank, w_size);
+        // TODO: by default, we consider the weight is constant.
+        // cache for later reuse.
         memory[ARG_SRC] = select_src;
         memory[ARG_WEI] = select_wgt;
         if (attrs.withBias && w_rank == 0) {

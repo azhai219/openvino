@@ -362,12 +362,13 @@ MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_
 }
 
 void FullyConnected::createPrimitive() {
-    if (auto env = getenv("ENABLE_CCL")) {
         auto src = getSrcMemoryAtPort(DATA_ID);
         auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
         auto dst = getDstMemoryAtPort(0);
+    if (auto env = getenv("ENABLE_CCL")) {
         auto select_src= split(src, -1, w_rank, w_size);
-        auto select_wgt = split_horizon(wgt, -1, w_rank, w_size);
+        auto select_wgt = attrs.weightsNonTransposed ? split_horizon(wgt, -1, w_rank, w_size)
+                          : split(wgt, -1, w_rank, w_size);
         // TODO: by default, we consider the weight is constant.
         // cache for later reuse.
         memory[ARG_SRC] = select_src;

@@ -62,6 +62,7 @@ public:
     void fuseDecompressionMultiply(const MemoryCPtr& memory);
     void fuseDecompressionSubtract(const MemoryCPtr& memory);
 
+    MemoryPtr split_horizon(const MemoryPtr src, int dim, int w_rank, int w_size);
     MemoryPtr split(const MemoryPtr src, int dim, int w_rank, int w_size);
     // void merge(MemoryPtr dst, const std::vector<void*> buf, ov::element::Type prec);
 
@@ -83,6 +84,8 @@ private:
     ExecutorFactoryPtr<FCAttrs, node::FullyConnected> factory;
     ExecutorPtr executor = nullptr;
     std::string errorPrefix;
+    int w_rank = -1;
+    int w_size = -1;
 };
 
 }  // namespace node

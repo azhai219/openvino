@@ -117,6 +117,7 @@ void FullyConnected::execute(dnnl::stream strm) {
     executor->execute(memory);
 
     if (auto env = getenv("ENABLE_CCL")) {
+        // post process output
         auto send_mem = memory[ARG_DST];
         auto send_ptr = send_mem->getData();
         auto prec = send_mem->getPrecision();
@@ -342,19 +343,19 @@ MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_
     auto element_size = prec.size();
     VectorDims new_dims = dims;
     new_dims[dim] = dims[dim] / w_size;
-    const int stride = dims[dim] / w_size;
     auto new_desc = desc->cloneWithNewDims(new_dims, true);
     MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc);
     // copy
     auto srcPtr = static_cast<uint8_t*>(src->getData());
     auto dstPtr = static_cast<uint8_t*>(ptr->getData());
-    auto mem_size = src->getSize();
-    auto channel_size = dims[dim] * element_size;
-    const int step = mem_size / channel_size;
-    const auto copySize = stride * element_size;
+    auto mem_size = src->getSize(); // total bytes 
+    auto channel_size = dims[dim] * element_size; // selected dim bytes
+    const int step = (mem_size / channel_size); // the steps need to copy.
+    const int stride = dims[dim] / w_size; // elements of half selected dim.
+    const auto copySize = stride * element_size; // bytes of half selected dim.
     for (int i = 0; i < step; ++i) {
-        int dst_offset = i * stride;
-        int src_offset = i * stride * 2 + w_rank * stride;
+        int dst_offset = i * copySize;
+        int src_offset = i * copySize* 2 + w_rank * copySize;
         cpu_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
     }
     return ptr;

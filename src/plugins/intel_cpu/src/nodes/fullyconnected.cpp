@@ -114,7 +114,9 @@ void FullyConnected::execute(dnnl::stream strm) {
         memory[ARG_SRC] = select_src;
     }
 
-    executor->execute(memory);
+    {
+        executor->execute(memory);
+    }
 
     if (auto env = getenv("ENABLE_CCL")) {
         // post process output
@@ -132,6 +134,7 @@ void FullyConnected::execute(dnnl::stream strm) {
             printf("Unsupported data type for reduceAdd.\n");
             exit(-1);
         }
+
         memory[ARG_DST] = send_mem;
     }
 }
@@ -353,11 +356,11 @@ MemoryPtr FullyConnected::split(const MemoryPtr src, int dim, int w_rank, int w_
     const int step = (mem_size / channel_size); // the steps need to copy.
     const int stride = dims[dim] / w_size; // elements of half selected dim.
     const auto copySize = stride * element_size; // bytes of half selected dim.
-    for (int i = 0; i < step; ++i) {
+    parallel_for(step, [&](int i){
         int dst_offset = i * copySize;
         int src_offset = i * copySize* 2 + w_rank * copySize;
-        cpu_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
-    }
+        cpu_parallel_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
+    });
     return ptr;
 }
 

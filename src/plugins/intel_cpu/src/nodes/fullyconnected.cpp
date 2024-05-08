@@ -109,6 +109,7 @@ void FullyConnected::allreduce_kernel(float* send_buf, float* recv_buf, size_t c
 
 void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov::element::Type dtype) {
     ov::threading::MessageInfo send_message;
+    send_message.msg_type = ov::threading::MsgType::TP;
     send_message.rank = {w_rank};
     send_message.buf = send_buf;
     message->send_message(send_message);

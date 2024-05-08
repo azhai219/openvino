@@ -16,6 +16,7 @@
 #include "nodes/executors/memory_arguments.hpp"
 #include "nodes/executors/fullyconnected_config.hpp"
 #include "post_ops.hpp"
+#include "openvino/runtime/threading/cpu_message.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -62,6 +63,12 @@ public:
     void fuseDecompressionMultiply(const MemoryCPtr& memory);
     void fuseDecompressionSubtract(const MemoryCPtr& memory);
 
+    MemoryPtr split_h(const MemoryPtr src, int dim, int w_rank, int w_size);
+    MemoryPtr split_v(const MemoryPtr src, int dim, int w_rank, int w_size);
+    void allreduce(void *send_buf, void *recv_buf, size_t count, ov::element::Type dtype);
+    void allreduce_kernel(float* send_buf, float* recv_buf, size_t count);
+    void allreduce_opt_v1(float* send_buf, float* recv_buf, size_t count);
+
 protected:
     void toNumaNodeImpl(int numaID) override;
 
@@ -79,6 +86,10 @@ private:
     ExecutorFactoryPtr<FCAttrs, node::FullyConnected> factory;
     ExecutorPtr executor = nullptr;
     std::string errorPrefix;
+    int w_rank = -1;
+    int w_size = -1;
+    bool flag_tp = false;
+    std::shared_ptr<ov::threading::MessageManage> message = nullptr;
 };
 
 }  // namespace node

@@ -182,7 +182,7 @@ void FullyConnected::execute(dnnl::stream strm) {
             exit(-1);
         }
 
-        memory[ARG_DST] = send_mem;
+        memory[ARG_DST] = recv_mem;
     }
 }
 

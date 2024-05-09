@@ -182,6 +182,7 @@ void FullyConnected::execute(dnnl::stream strm) {
             exit(-1);
         }
 
+        cpu_parallel_memcpy(send_ptr, recv_ptr, send_mem->getSize());
         memory[ARG_DST] = recv_mem;
     }
 }

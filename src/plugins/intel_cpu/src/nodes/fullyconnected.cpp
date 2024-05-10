@@ -78,11 +78,6 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
         OPENVINO_THROW_NOT_IMPLEMENTED(errorMessage);
 }
 
-void FullyConnected::sync() {
-    // TODO:
-    // barrier: sleep(5);
-}
-
 void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov::element::Type dtype) {
     ov::threading::MessageInfo send_message;
     send_message.msg_type = ov::threading::MsgType::TP;
@@ -98,7 +93,11 @@ void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov:
         float* send_ptr = static_cast<float*>(vec_message[idx].buf);
         ov::Extensions::Cpu::XARCH::allreduce_float32(send_ptr, recv_ptr, count);
     }
-    sync();
+    // sync before return
+    ov::threading::MessageInfo msg_info;
+    msg_info.msg_type = ov::threading::MsgType::REDUCE;
+    message->send_message(msg_info);
+    message->reduce_wait(w_rank, w_size);
 }
 
 bool FullyConnected::canBeExecutedInInt8() const {

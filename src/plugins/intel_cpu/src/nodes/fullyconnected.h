@@ -66,9 +66,6 @@ public:
     MemoryPtr split_h(const MemoryPtr src, int dim, int w_rank, int w_size);
     MemoryPtr split_v(const MemoryPtr src, int dim, int w_rank, int w_size);
     void allreduce(void *send_buf, void *recv_buf, size_t count, ov::element::Type dtype);
-    void allreduce_kernel(float* send_buf, float* recv_buf, size_t count);
-    void allreduce_opt_v1(const float* send_buf, float* recv_buf, size_t count);
-    void sync();
 
 protected:
     void toNumaNodeImpl(int numaID) override;

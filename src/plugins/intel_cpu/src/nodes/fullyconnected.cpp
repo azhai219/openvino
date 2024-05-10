@@ -27,6 +27,7 @@
 #include "transformations/cpu_opset/common/op/fully_connected.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
+#include "kernels/ccl/allreduce.hpp"
 
 using namespace dnnl;
 using namespace ov::element;
@@ -69,7 +70,7 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
         // context->getConfig().streamExecutorConfig.get_streams();
         w_size = 2;
         flag_tp = true;
-        std::cout << "[dbg] w_rank: " << w_rank << ", w_size: " << w_size << "\n";
+        // std::cout << "[dbg] w_rank: " << w_rank << ", w_size: " << w_size << "\n";
         message = ov::threading::message_manager();
     }
     std::string errorMessage;
@@ -77,34 +78,9 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
         OPENVINO_THROW_NOT_IMPLEMENTED(errorMessage);
 }
 
-void FullyConnected::allreduce_opt_v1(float *send_buf, float *recv_buf, size_t count) {
-  parallel_for(count, [&](size_t i) {
-    recv_buf[i] += send_buf[i];
-  });
-}
-
-void FullyConnected::allreduce_kernel(float* send_buf, float* recv_buf, size_t count) {
-    // const size_t stride = 32;
-    // size_t step = count / stride;
-    // parallel_for(step, [&](size_t j){
-    //     __m512 vecA, vecB, vecC, vecX, vecY, vecZ;
-    //     size_t i0 = j * 16;
-    //     size_t i1 = j * 16 + 16;
-    //     // iter 0
-    //     vecA = _mm512_loadu_ps(send_buf + i0);
-    //     vecB = _mm512_loadu_ps(recv_buf + i0);
-    //     vecC = _mm512_add_ps(vecA, vecB);
-    //     _mm512_storeu_ps(recv_buf + i0, vecC);
-    //     // iter 1
-    //     vecX = _mm512_loadu_ps(send_buf + i1);
-    //     vecY = _mm512_loadu_ps(recv_buf + i1);
-    //     vecZ = _mm512_add_ps(vecX, vecY);
-    //     _mm512_storeu_ps(recv_buf + i1, vecZ);
-    // });
-    // size_t tail = count & ~(stride - 1);
-    // for (size_t i = tail; i < count; ++i) {
-    //   recv_buf[i] += send_buf[i];
-    // }
+void FullyConnected::sync() {
+    // TODO:
+    // barrier: sleep(5);
 }
 
 void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov::element::Type dtype) {
@@ -114,13 +90,15 @@ void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov:
     send_message.buf = send_buf;
     message->send_message(send_message);
     auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
+    float* recv_ptr = static_cast<float*>(recv_buf);
     for (int idx=0; idx < w_size; ++idx) {
-        if (idx == w_rank) {
-            continue;
-        }
-        // allreduce_kernel((float*)vec_message[idx].buf, (float*)recv_buf, count);
-        allreduce_opt_v1((float*)vec_message[idx].buf, (float*)recv_buf, count);
+        // if (idx == w_rank) {
+        //     continue;
+        // }
+        float* send_ptr = static_cast<float*>(vec_message[idx].buf);
+        ov::Extensions::Cpu::XARCH::allreduce_float32(send_ptr, recv_ptr, count);
     }
+    sync();
 }
 
 bool FullyConnected::canBeExecutedInInt8() const {
@@ -132,7 +110,6 @@ bool FullyConnected::canBeExecutedInInt8() const {
 
 ExecutorPtr FullyConnected::createExecutor() {
     if (auto env = getenv("ENABLE_TP") && flag_tp) {
-        std::cout << "[dbg] create Executor\n";
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
@@ -167,15 +144,14 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto send_ptr = send_mem->getData();
         auto prec = send_mem->getPrecision();
         auto ele_num = send_mem->getSize() / prec.size();
-        MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), send_ptr);
+        // MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), send_ptr);
+        MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), nullptr);
         auto recv_ptr = recv_mem->getData();
         // TODO
         if (prec == ov::element::bf16) {
-            // Messenger::getInstance().helperAllgathervBF16(send_ptr, ele_num, recv_ptr, recvCount);
-            // Messenger::getInstance().helperAllreduceBF16(send_ptr, send_ptr, ele_num);
+            printf("Unsupported bf16 for now!!!.\n");
+            exit(-1);
         } else if (prec == ov::element::f32) {
-            // Messenger::getInstance().helperAllgatherv(send_ptr, ele_num, recv_ptr, recvCount);
-            // Messenger::getInstance().helperAllreduce(send_ptr, send_ptr, ele_num);
             allreduce(send_ptr, recv_ptr, ele_num, prec);
         } else {
             printf("Unsupported data type for reduceAdd.\n");
@@ -414,15 +390,11 @@ void FullyConnected::createPrimitive() {
     auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
     auto dst = getDstMemoryAtPort(0);
     if (auto env = getenv("ENABLE_TP") && flag_tp) {
-        std::cout << "[dbg] create primitive\n";
         auto select_src= split_v(src, -1, w_rank, w_size);
-        std::cout << "[dbg] --------- \n";
-        std::cout << "[dbg] wgt shape: " << wgt->getShape().toString() << ", wgt transposed: " << attrs.weightsNonTransposed << "\n";
         auto select_wgt = attrs.weightsNonTransposed ? split_h(wgt, -1, w_rank, w_size)
                           : split_v(wgt, -1, w_rank, w_size);
         // TODO: by default, we consider the weight is constant.
         // cache for later reuse.
-        std::cout << "[dbg] 000000000 \n";
         memory[ARG_SRC] = select_src;
         memory[ARG_WEI] = select_wgt;
         if (attrs.withBias && w_rank == 0) {
@@ -436,16 +408,12 @@ void FullyConnected::createPrimitive() {
         memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
         memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : MemoryDescUtils::makeEmptyMemory(context);
     }
-    std::cout << "[dbg] 111111111\n";
     memory[ARG_DST] = getDstMemoryAtPort(0);
     // @todo should we preconfigure only for dynamic shapes?
     // Since for static shapes primitive is created in scope of compile_model() anyway
-    std::cout << "[dbg] 222222222\n";
     factory->preconfigure(memory);
 
-    std::cout << "[dbg] 333333333\n";
     Node::createPrimitive();
-    std::cout << "[dbg] finish primitive\n";
 }
 
 ov::element::Type FullyConnected::getRuntimePrecision() const {

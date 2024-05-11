@@ -146,6 +146,7 @@ void FullyConnected::execute(dnnl::stream strm) {
         // MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), send_ptr);
         MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), nullptr);
         auto recv_ptr = recv_mem->getData();
+        memset(recv_ptr, 0, recv_mem->getSize());
         // TODO
         if (prec == ov::element::bf16) {
             printf("Unsupported bf16 for now!!!.\n");

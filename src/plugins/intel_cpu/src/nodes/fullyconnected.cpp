@@ -87,9 +87,9 @@ void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov:
     auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
     float* recv_ptr = static_cast<float*>(recv_buf);
     for (int idx=0; idx < w_size; ++idx) {
-        // if (idx == w_rank) {
-        //     continue;
-        // }
+        if (idx == w_rank) {
+            continue;
+        }
         float* send_ptr = static_cast<float*>(vec_message[idx].buf);
         ov::Extensions::Cpu::XARCH::allreduce_float32(send_ptr, recv_ptr, count);
     }
@@ -143,10 +143,10 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto send_ptr = send_mem->getData();
         auto prec = send_mem->getPrecision();
         auto ele_num = send_mem->getSize() / prec.size();
-        // MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), send_ptr);
-        MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), nullptr);
+        MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), send_ptr);
+        // MemoryPtr recv_mem = std::make_shared<Memory>(context->getEngine(), send_mem->getDescPtr(), nullptr);
         auto recv_ptr = recv_mem->getData();
-        memset(recv_ptr, 0, recv_mem->getSize());
+        // memset(recv_ptr, 0, recv_mem->getSize());
         // TODO
         if (prec == ov::element::bf16) {
             printf("Unsupported bf16 for now!!!.\n");
@@ -158,8 +158,9 @@ void FullyConnected::execute(dnnl::stream strm) {
             exit(-1);
         }
 
-        cpu_parallel_memcpy(send_ptr, recv_ptr, send_mem->getSize());
-        memory[ARG_DST] = send_mem;
+        // cpu_parallel_memcpy(send_ptr, recv_ptr, send_mem->getSize());
+        // memory[ARG_DST] = send_mem;
+        memory[ARG_DST] = recv_mem;
     }
 }
 

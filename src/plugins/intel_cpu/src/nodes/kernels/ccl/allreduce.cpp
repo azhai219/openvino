@@ -23,42 +23,37 @@ namespace Cpu {
 namespace XARCH {
 
 void allreduce_float32(const float* send_buf, float* recv_buf, size_t count) {
-// #if defined(HAVE_AVX512F)
-//     const size_t stride = 32;
-//     size_t step = count / stride;
-//     parallel_for(step, [&](size_t j){
-//         __m512 vecA, vecB, vecC, vecX, vecY, vecZ;
-//         size_t i0 = j * 16;
-//         size_t i1 = j * 16 + 16;
-//         // iter 0
-//         vecA = _mm512_loadu_ps(send_buf + i0);
-//         vecB = _mm512_loadu_ps(recv_buf + i0);
-//         vecC = _mm512_add_ps(vecA, vecB);
-//         _mm512_storeu_ps(recv_buf + i0, vecC);
-//         // iter 1
-//         vecX = _mm512_loadu_ps(send_buf + i1);
-//         vecY = _mm512_loadu_ps(recv_buf + i1);
-//         vecZ = _mm512_add_ps(vecX, vecY);
-//         _mm512_storeu_ps(recv_buf + i1, vecZ);
-//     });
-//     size_t tail = count & ~(stride - 1);
-//     for (size_t i = tail; i < count; ++i) {
-//       recv_buf[i] += send_buf[i];
-//     }
-// #elif defined(HAVE_AVX2)
-//     const size_t stride = 8;
-//     __m256 vecA, vecB, vecC;
-//     for (size_t i = 0; i < count; i += 8) {
-//         vecA = _mm256_loadu_ps(send_buf + i);
-//         vecB = _mm256_loadu_ps(recv_buf + i);
-//         vecC = _mm256_add_ps(vecA, vecB);
-//         _mm256_storeu_ps(recv_buf + i, vecC);
-//     }
-//     size_t tail = count & ~(stride - 1);
-//     for (size_t i = tail; i < count; ++i) {
-//         recv_buf[i] += send_buf[i];
-//     }
-// #else
+#if defined(HAVE_AVX512F)
+    const size_t stride = 16;
+    size_t step = count / stride;
+    parallel_for(step, [&](size_t j){
+      __m512 vecA, vecB, vecC;
+      size_t i = j * stride;
+      vecA = _mm512_loadu_ps(send_buf + i);
+      vecB = _mm512_loadu_ps(recv_buf + i);
+      vecC = _mm512_add_ps(vecA, vecB);
+      _mm512_storeu_ps(recv_buf + i, vecC);
+    });
+    size_t tail = count & ~(stride - 1);
+    for (size_t i = tail; i < count; ++i) {
+      recv_buf[i] += send_buf[i];
+    }
+#elif defined(HAVE_AVX2)
+    const size_t stride = 8;
+    size_t step = count / stride;
+    parallel_for(step, [&](size_t j){
+      __m256 vecA, vecB, vecC;
+      size_t i = j * stride;
+      vecA = _mm256_loadu_ps(send_buf + i);
+      vecB = _mm256_loadu_ps(recv_buf + i);
+      vecC = _mm256_add_ps(vecA, vecB);
+      _mm256_storeu_ps(recv_buf + i, vecC);
+    });
+    size_t tail = count & ~(stride - 1);
+    for (size_t i = tail; i < count; ++i) {
+        recv_buf[i] += send_buf[i];
+    }
+#else
     const size_t stride = 8;
     const size_t unloop = 8;
     size_t step = count / unloop;
@@ -76,7 +71,7 @@ void allreduce_float32(const float* send_buf, float* recv_buf, size_t count) {
     for (size_t i = tail; i < count; ++i) {
       recv_buf[i] += send_buf[i];
     }
-// #endif
+#endif
 }
 
 }  // namespace XARCH

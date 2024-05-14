@@ -63,12 +63,17 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
     : Node(op, context, FCShapeInferFactory(op)),
       errorPrefix("FullyConnected node with name '" + getName() + "'") {
     // init w_rank and w_size
-    if (!context->getCPUStreamExecutor()->get_rank().empty()) {
+    if (!context->getCPUStreamExecutor()->get_rank().empty() && std::getenv("ENABLE_TP")) {
+        const char* str_enable = std::getenv("ENABLE_TP");
+        tp_mode = std::atoi(str_enable);
+        if (!(tp_mode == 1 || tp_mode == 2 || tp_mode == 3)) {
+            printf("current tp mode just supports 1(allreduce), 2(allgather_h), 3(allgather_v), %d is unexpeced!\n", tp_mode);
+            exit(-1);
+        }
         w_rank = context->getCPUStreamExecutor()->get_rank()[0];
         // TODO@Xiaoxia: get correct stream num
         // context->getConfig().streamExecutorConfig.get_streams();
         w_size = 2;
-        flag_tp = true;
         // std::cout << "[dbg] w_rank: " << w_rank << ", w_size: " << w_size << "\n";
         message = ov::threading::message_manager();
     }
@@ -121,7 +126,7 @@ bool FullyConnected::canBeExecutedInInt8() const {
 }
 
 ExecutorPtr FullyConnected::createExecutor() {
-    if (auto env = getenv("ENABLE_TP") && flag_tp) {
+    if (tp_mode == 1) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
@@ -140,7 +145,7 @@ void FullyConnected::prepareParams() {
 }
 
 void FullyConnected::execute(dnnl::stream strm) {
-    if (auto env = getenv("ENABLE_TP") && flag_tp) {
+    if (tp_mode == 1) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
@@ -150,7 +155,7 @@ void FullyConnected::execute(dnnl::stream strm) {
         executor->execute(memory);
     }
 
-    if (auto env = getenv("ENABLE_TP") && flag_tp) {
+    if (tp_mode == 1) {
         // post process output
         auto send_mem = memory[ARG_DST];
         auto send_ptr = send_mem->getData();
@@ -394,7 +399,7 @@ void FullyConnected::createPrimitive() {
     auto src = getSrcMemoryAtPort(DATA_ID);
     auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
     auto dst = getDstMemoryAtPort(0);
-    if (auto env = getenv("ENABLE_TP") && flag_tp) {
+    if (tp_mode == 1) {
         auto select_src= split_v(src, -1, w_rank, w_size);
         auto select_wgt = attrs.weightsNonTransposed ? split_h(wgt, -1, w_rank, w_size)
                           : split_v(wgt, -1, w_rank, w_size);

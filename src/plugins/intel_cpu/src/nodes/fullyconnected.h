@@ -86,8 +86,13 @@ private:
     std::string errorPrefix;
     int w_rank = -1;
     int w_size = -1;
-    bool flag_tp = false;
     std::shared_ptr<ov::threading::MessageManage> message = nullptr;
+    /*
+     * 1: allreduce     : split src and wgt, element-add dst
+     * 2: allgather_h   : split src and wgt, concat in horizontal direction
+     * 3: allgather_v   : split src(batch size > 1 is required.), concat in vertical direction
+    */
+    int tp_mode;
 };
 
 }  // namespace node

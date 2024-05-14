@@ -135,15 +135,14 @@ void GraphOptimizer::ApplyCommonGraphOptimizations(Graph &graph) {
     FuseConvolutionAndSimpleOperation(graph);
     graph.RemoveDroppedNodes();
 
-    int tp_mode = 0;
     if (auto env = std::getenv("ENABLE_TP")) {
         const char* str_enable = std::getenv("ENABLE_TP");
-        tp_mode = std::atoi(str_enable);
-    }
-    if (tp_mode == 1) {
-        OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseFullyConnectedAndSimpleOperation");
-        FuseFullyConnectedAndSimpleOperation(graph);
-        graph.RemoveDroppedNodes();
+        int tp_mode = std::atoi(str_enable);
+        if (tp_mode != 1) {
+            OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseFullyConnectedAndSimpleOperation");
+            FuseFullyConnectedAndSimpleOperation(graph);
+            graph.RemoveDroppedNodes();
+        }
     }
 
     OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseMatMulAndSimpleOperation");

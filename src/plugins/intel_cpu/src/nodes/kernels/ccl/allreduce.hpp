@@ -14,6 +14,10 @@ void allreduce_float32(const float* send_buf,
                        float* recv_buf,
                        size_t count);
 
+void allreduce_bfloat16(ov::bfloat16* send_buf,
+                        ov::bfloat16* recv_buf,
+                        size_t count);
+
 }  // namespace XARCH
 }  // namespace Cpu
 }  // namespace Extensions

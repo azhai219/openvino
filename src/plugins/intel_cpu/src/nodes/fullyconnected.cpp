@@ -84,13 +84,27 @@ void FullyConnected::allreduce(void *send_buf, void *recv_buf, size_t count, ov:
     send_message.buf = send_buf;
     message->send_message(send_message);
     auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
-    float* recv_ptr = static_cast<float*>(recv_buf);
-    for (int idx=0; idx < w_size; ++idx) {
-        // if (idx == w_rank) {
-        //     continue;
-        // }
-        float* send_ptr = static_cast<float*>(vec_message[idx].buf);
-        ov::Extensions::Cpu::XARCH::allreduce_float32(send_ptr, recv_ptr, count);
+    if (dtype == ov::element::f32) {
+        float* recv_ptr = static_cast<float*>(recv_buf);
+        for (int idx=0; idx < w_size; ++idx) {
+            // if (idx == w_rank) {
+            //     continue;
+            // }
+            float* send_ptr = static_cast<float*>(vec_message[idx].buf);
+            ov::Extensions::Cpu::XARCH::allreduce_float32(send_ptr, recv_ptr, count);
+        }
+    } else if (dtype == ov::element::bf16) {
+        ov::bfloat16* recv_ptr = static_cast<ov::bfloat16*>(recv_buf);
+        for (int idx=0; idx < w_size; ++idx) {
+            // if (idx == w_rank) {
+            //     continue;
+            // }
+            ov::bfloat16* send_ptr = static_cast<ov::bfloat16*>(vec_message[idx].buf);
+            ov::Extensions::Cpu::XARCH::allreduce_bfloat16(send_ptr, recv_ptr, count);
+        }
+    } else {
+        printf("Unsupported data type for reduceAdd.\n");
+        exit(-1);
     }
     // sync before return
     ov::threading::MessageInfo msg_info;
@@ -147,15 +161,7 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto recv_ptr = recv_mem->getData();
         memset(recv_ptr, 0, recv_mem->getSize());
         // TODO
-        if (prec == ov::element::bf16) {
-            printf("Unsupported bf16 for now!!!.\n");
-            exit(-1);
-        } else if (prec == ov::element::f32) {
-            allreduce(send_ptr, recv_ptr, ele_num, prec);
-        } else {
-            printf("Unsupported data type for reduceAdd.\n");
-            exit(-1);
-        }
+        allreduce(send_ptr, recv_ptr, ele_num, prec);
 
         cpu_parallel_memcpy(send_ptr, recv_ptr, send_mem->getSize());
         memory[ARG_DST] = send_mem;

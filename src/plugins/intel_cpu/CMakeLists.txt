@@ -227,7 +227,7 @@ cross_compiled_file(${TARGET_NAME}
         ARCH AVX512F AVX2 ANY
                     src/nodes/kernels/ccl/allreduce.cpp
         API         src/nodes/kernels/ccl/allreduce.hpp
-        NAME        allreduce_float32
+        NAME        allreduce_float32 allreduce_bfloat16
         NAMESPACE   ov::Extensions::Cpu::XARCH
 )
 # system dependencies must go last

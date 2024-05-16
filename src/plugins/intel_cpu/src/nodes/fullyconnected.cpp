@@ -69,6 +69,8 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
         if (!(tp_mode == 1 || tp_mode == 2 || tp_mode == 3)) {
             printf("current tp mode just supports 1(allreduce), 2(allgather_h), 3(allgather_v), %d is unexpeced!\n", tp_mode);
             exit(-1);
+        } else {
+            printf("[dbg] %s is in %d mode.\n", getName().c_str(), tp_mode);
         }
         w_rank = context->getCPUStreamExecutor()->get_rank()[0];
         // TODO@Xiaoxia: get correct stream num
@@ -126,6 +128,7 @@ bool FullyConnected::canBeExecutedInInt8() const {
 }
 
 ExecutorPtr FullyConnected::createExecutor() {
+    // std::cout << "[dbg] create executor\n";
     if (tp_mode == 1) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
@@ -134,8 +137,26 @@ ExecutorPtr FullyConnected::createExecutor() {
         // TODO: update dst shape once output shape is changed.
         memory[ARG_DST] = getDstMemoryAtPort(0);
     }
+    if (tp_mode == 3) {
+        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
+        auto select_src = split_h(srcMemoryBuffer, 0, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
+
+        if (attrs.withBias && w_rank == 0) {
+            auto bias = getSrcMemoryAtPort(BIAS_ID);
+            auto select_bias = split_v(bias, 0, w_rank, w_size);
+            memory[ARG_BIAS] = select_bias;
+        } else {
+            memory[ARG_BIAS] = MemoryDescUtils::makeEmptyMemory(context);
+        }
+
+        auto dstMemoryBuffer = getDstMemoryAtPort(0);
+        auto select_dst = split_h(srcMemoryBuffer, 0, w_rank, w_size);
+        memory[ARG_DST] = select_dst;
+    }
     const auto& executor = factory->make(memory);
     getSelectedPrimitiveDescriptor()->setImplementationType(executor->implType());
+    // std::cout << "[dbg] finish executor\n";
 
     return executor;
 }
@@ -149,6 +170,24 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
+    }
+    if (tp_mode == 3) {
+        auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
+        auto select_src = split_h(srcMemoryBuffer, 0, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
+
+        // if (attrs.withBias && w_rank == 0) {
+        //     auto bias = getSrcMemoryAtPort(BIAS_ID);
+        //     auto select_bias = split_v(bias, 0, w_rank, w_size);
+        //     memory[ARG_BIAS] = select_bias;
+        // } else {
+        //     memory[ARG_BIAS] = MemoryDescUtils::makeEmptyMemory(context);
+        // }
+
+        // need not update the output buffer here!
+        // auto dstMemoryBuffer = getDstMemoryAtPort(0);
+        // auto select_dst = split_h(dstMemoryBuffer, 0, w_rank, w_size);
+        // memory[ARG_DST] = select_dst;
     }
 
     {
@@ -170,6 +209,41 @@ void FullyConnected::execute(dnnl::stream strm) {
 
         cpu_parallel_memcpy(send_ptr, recv_ptr, send_mem->getSize());
         memory[ARG_DST] = send_mem;
+    }
+
+    if (tp_mode == 3) {
+        // dst
+        auto dst = getDstMemoryAtPort(0);
+        auto dst_ptr = static_cast<uint8_t*>(dst->getData());
+        const auto copySize = dst->getSize() / w_size;
+        // cur dst
+        auto cur_dst = memory[ARG_DST];
+        auto cur_dst_ptr = static_cast<uint8_t*>(cur_dst->getData());
+        // std::cout << "[dbg] target size: " << dst->getSize() << ", current size: " << copySize << "\n";
+        // copy cur dst buffer to dst buffer. But cur dst buffer should be in dst buffer already.
+        // TODO@Xiuchuan: may optimize here!
+        // printf("[dbg] w_rank=%d, target address:%d, current address:%d\n", w_rank, dst_ptr + w_rank * copySize, cur_dst_ptr);
+        cpu_parallel_memcpy(dst_ptr + w_rank * copySize, cur_dst_ptr, copySize);
+        // sync with another stream's buffer
+        ov::threading::MessageInfo send_message;
+        send_message.msg_type = ov::threading::MsgType::TP;
+        send_message.rank = {w_rank};
+        send_message.buf = cur_dst->getData();
+        message->send_message(send_message);
+        // auto fp32_cur = cur_dst->getDataAs<float>();
+        // printf("[dbg] current w_rank=%d, %f - %f - %f - %f - %f\n", w_rank,fp32_cur[0], fp32_cur[1], fp32_cur[2], fp32_cur[3], fp32_cur[4]);
+        auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
+        for (int i=0; i<w_size; ++i) {
+            const int recv_rank = vec_message[i].rank[0];
+            if (recv_rank == w_rank) {
+                continue;
+            }
+            // auto fp32_ptr = static_cast<float*>(vec_message[i].buf);
+            // printf("[dbg] idx=%d, w_rank=%d, %f - %f - %f - %f - %f\n",i, w_rank, fp32_ptr[0], fp32_ptr[1], fp32_ptr[2], fp32_ptr[3], fp32_ptr[4]);
+            auto new_ptr = static_cast<uint8_t*>(vec_message[i].buf);
+            cpu_parallel_memcpy(dst_ptr + recv_rank * copySize, new_ptr, copySize);
+        }
+        // No sync here. First done, first finish.
     }
 }
 
@@ -342,12 +416,25 @@ MemoryPtr FullyConnected::split_h(const MemoryPtr src, int dim, int w_rank, int 
     if (dim < 0) {
         dim += dims.size();
     }
-    auto element_size = prec.size();
+    if (shape.isDynamic()) {
+        // if the dim is dynamic, should return a dynamic dim without any change.
+        // if the dim is static, should split it indeed.
+        const auto& pshape = shape.toPartialShape();
+        if (pshape[dim].is_dynamic()) {
+            return src;
+        }
+        auto new_pshape = pshape;
+        new_pshape[dim] = new_pshape[dim] / w_size;
+        auto new_desc = std::make_shared<CpuBlockedMemoryDesc>(prec, Shape{new_pshape});
+        MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc);
+        return ptr;
+    }
+    // auto element_size = prec.size();
     VectorDims new_dims = dims;
     new_dims[dim] = dims[dim] / w_size;
     // const int stride = dims[dim] / w_size;
     auto new_desc = desc->cloneWithNewDims(new_dims, true);
-    auto srcPtr = src->getData();
+    auto srcPtr = static_cast<uint8_t*>(src->getData());
     const size_t stride = src->getSize() / w_size;
 
     MemoryPtr ptr = std::make_shared<Memory>(context->getEngine(), new_desc, srcPtr + w_rank * stride);
@@ -396,6 +483,7 @@ MemoryPtr FullyConnected::split_v(const MemoryPtr src, int dim, int w_rank, int 
 }
 
 void FullyConnected::createPrimitive() {
+    // printf("[dbg] create Primitive\n");
     auto src = getSrcMemoryAtPort(DATA_ID);
     auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
     auto dst = getDstMemoryAtPort(0);
@@ -413,17 +501,53 @@ void FullyConnected::createPrimitive() {
         } else {
             memory[ARG_BIAS] = MemoryDescUtils::makeEmptyMemory(context);
         }
+        memory[ARG_DST] = getDstMemoryAtPort(0);
+    } else if (tp_mode == 2) {
+        printf("[dbg] not supported for now!!!\n");
+        exit(-1);
+    } else if (tp_mode == 3) {
+        /*
+        // src
+        auto select_src = split_h(src, 0, w_rank, w_size);
+        memory[ARG_SRC] = select_src;
+
+        // wgt
+        // should NOT split weight at all.
+
+        // bias
+        if (attrs.withBias && w_rank == 0) {
+            auto bias = getSrcMemoryAtPort(BIAS_ID);
+            auto select_bias = split_v(bias, 0, w_rank, w_size);
+            memory[ARG_BIAS] = select_bias;
+        } else {
+            memory[ARG_BIAS] = MemoryDescUtils::makeEmptyMemory(context);
+        }
+
+        // dst
+        auto select_dst = split_h(dst, 0, w_rank, w_size);
+        memory[ARG_DST] = select_dst;
+        std::cout << "[dbg] src_shape:" << select_src->getShape().toString()
+            << ", wgt_shape:" << wgt->getShape().toString()
+            << ", dst_shape:" << select_dst->getShape().toString()
+            << "\n";
+        */
+        // no change for create primitive.
+        memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
+        memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
+        memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : MemoryDescUtils::makeEmptyMemory(context);
+        memory[ARG_DST] = getDstMemoryAtPort(0);
     } else {
         memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
         memory[ARG_WEI] = getSrcMemoryAtPort(WEIGHTS_ID);
         memory[ARG_BIAS] = attrs.withBias ? getSrcMemoryAtPort(BIAS_ID) : MemoryDescUtils::makeEmptyMemory(context);
+        memory[ARG_DST] = getDstMemoryAtPort(0);
     }
-    memory[ARG_DST] = getDstMemoryAtPort(0);
     // @todo should we preconfigure only for dynamic shapes?
     // Since for static shapes primitive is created in scope of compile_model() anyway
     factory->preconfigure(memory);
 
     Node::createPrimitive();
+    // printf("[dbg] finish Primitive\n");
 }
 
 ov::element::Type FullyConnected::getRuntimePrecision() const {

@@ -151,7 +151,7 @@ ExecutorPtr FullyConnected::createExecutor() {
         }
 
         auto dstMemoryBuffer = getDstMemoryAtPort(0);
-        auto select_dst = split_h(srcMemoryBuffer, 0, w_rank, w_size);
+        auto select_dst = split_h(dstMemoryBuffer, 0, w_rank, w_size);
         memory[ARG_DST] = select_dst;
     }
     const auto& executor = factory->make(memory);

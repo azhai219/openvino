@@ -93,6 +93,8 @@ private:
      * 3: allgather_v   : split src(batch size > 1 is required.), concat in vertical direction
     */
     int tp_mode;
+    MemoryPtr cached_splited_weight;
+    MemoryPtr cached_splited_bias;
 };
 
 }  // namespace node

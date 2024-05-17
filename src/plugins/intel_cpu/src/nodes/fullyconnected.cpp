@@ -70,7 +70,7 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
             printf("current tp mode just supports 1(allreduce), 2(allgather_h), 3(allgather_v), %d is unexpeced!\n", tp_mode);
             exit(-1);
         } else {
-            printf("[dbg] %s is in %d mode.\n", getName().c_str(), tp_mode);
+            // printf("[dbg] %s is in %d mode.\n", getName().c_str(), tp_mode);
         }
         w_rank = context->getCPUStreamExecutor()->get_rank()[0];
         // TODO@Xiaoxia: get correct stream num
@@ -151,9 +151,10 @@ ExecutorPtr FullyConnected::createExecutor() {
         // }
         // memory[ARG_BIAS] = cached_splited_bias;
 
-        // auto dstMemoryBuffer = getDstMemoryAtPort(0);
-        // auto select_dst = split_v(dstMemoryBuffer, -1, w_rank, w_size);
-        // memory[ARG_DST] = select_dst;
+        // must call in dynamic
+        auto dstMemoryBuffer = getDstMemoryAtPort(0);
+        auto select_dst = split_v(dstMemoryBuffer, -1, w_rank, w_size);
+        memory[ARG_DST] = select_dst;
     }
     if (tp_mode == 3) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
@@ -573,7 +574,7 @@ MemoryPtr FullyConnected::split_v(const MemoryPtr src, int dim, int w_rank, int 
 }
 
 void FullyConnected::createPrimitive() {
-    printf("[dbg] create Primitive\n");
+    // printf("[dbg] create Primitive\n");
     auto src = getSrcMemoryAtPort(DATA_ID);
     auto wgt = getSrcMemoryAtPort(WEIGHTS_ID);
     auto dst = getDstMemoryAtPort(0);

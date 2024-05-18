@@ -63,9 +63,9 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
     : Node(op, context, FCShapeInferFactory(op)),
       errorPrefix("FullyConnected node with name '" + getName() + "'") {
     // init w_rank and w_size
-    if (!context->getCPUStreamExecutor()->get_rank().empty() && std::getenv("ENABLE_TP")) {
-        const char* str_enable = std::getenv("ENABLE_TP");
-        tp_mode = std::atoi(str_enable);
+    if (!context->getCPUStreamExecutor()->get_rank().empty()) { //&& std::getenv("ENABLE_TP")
+        // const char* str_enable = std::getenv("ENABLE_TP");
+        tp_mode = 1;//std::atoi(str_enable);
         if (!(tp_mode == 1 || tp_mode == 2 || tp_mode == 3)) {
             printf("current tp mode just supports 1(allreduce), 2(allgather_h), 3(allgather_v), %d is unexpeced!\n", tp_mode);
             exit(-1);
@@ -73,7 +73,7 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
             // printf("[dbg] %s is in %d mode.\n", getName().c_str(), tp_mode);
         }
         w_rank = context->getCPUStreamExecutor()->get_rank()[0];
-        // TODO@Xiaoxia: get correct stream num
+        // get correct stream num
         // context->getConfig().streamExecutorConfig.get_streams();
         w_size = 2;
         // std::cout << "[dbg] w_rank: " << w_rank << ", w_size: " << w_size << "\n";
@@ -286,7 +286,7 @@ void FullyConnected::execute(dnnl::stream strm) {
 
         auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
 
-        for (int i=0; i<w_size; ++i) {
+        for (int i = 0; i < w_size; ++i) {
             const int recv_rank = vec_message[i].rank[0];
             if (recv_rank == w_rank) {
                 continue;
@@ -312,8 +312,9 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto cur_dst_ptr = static_cast<uint8_t*>(cur_dst->getData());
         // std::cout << "[dbg] target size: " << dst->getSize() << ", current size: " << copySize << "\n";
         // copy cur dst buffer to dst buffer. But cur dst buffer should be in dst buffer already.
-        // TODO@Xiuchuan: may optimize here!
-        // printf("[dbg] w_rank=%d, target address:%d, current address:%d\n", w_rank, dst_ptr + w_rank * copySize, cur_dst_ptr);
+        // Xiuchuan: may optimize here!
+        // printf("[dbg] w_rank=%d, target address:%d, current address:%d\n", w_rank, dst_ptr + w_rank * copySize,
+        // cur_dst_ptr);
         cpu_parallel_memcpy(dst_ptr + w_rank * copySize, cur_dst_ptr, copySize);
         // sync with another stream's buffer
         ov::threading::MessageInfo send_message;
@@ -322,9 +323,10 @@ void FullyConnected::execute(dnnl::stream strm) {
         send_message.buf = cur_dst->getData();
         message->send_message(send_message);
         // auto fp32_cur = cur_dst->getDataAs<float>();
-        // printf("[dbg] current w_rank=%d, %f - %f - %f - %f - %f\n", w_rank,fp32_cur[0], fp32_cur[1], fp32_cur[2], fp32_cur[3], fp32_cur[4]);
-        auto vec_message = message->wait_message(/*cur_rank*/w_rank, /*streams_num*/w_size);
-        for (int i=0; i<w_size; ++i) {
+        // printf("[dbg] current w_rank=%d, %f - %f - %f - %f - %f\n", w_rank,fp32_cur[0], fp32_cur[1], fp32_cur[2],
+        // fp32_cur[3], fp32_cur[4]);
+        auto vec_message = message->wait_message(/*cur_rank*/ w_rank, /*streams_num*/ w_size);
+        for (int i = 0; i < w_size; ++i) {
             const int recv_rank = vec_message[i].rank[0];
             if (recv_rank == w_rank) {
                 continue;
@@ -580,13 +582,13 @@ void FullyConnected::createPrimitive() {
     auto dst = getDstMemoryAtPort(0);
     // {
     //     printf("src shape is %s\n", src->getShape().toString().c_str());
-    //     printf("weight is transposed? %d. and weight shape is %s\n", attrs.weightsNonTransposed, wgt->getShape().toString().c_str());
-    //     printf("dst shape is %s\n", dst->getShape().toString().c_str());
+    //     printf("weight is transposed? %d. and weight shape is %s\n", attrs.weightsNonTransposed,
+    //     wgt->getShape().toString().c_str()); printf("dst shape is %s\n", dst->getShape().toString().c_str());
     // }
     if (tp_mode == 1) {
-        auto select_src= split_v(src, -1, w_rank, w_size);
-        auto select_wgt = attrs.weightsNonTransposed ? split_h(wgt, -1, w_rank, w_size)
-                          : split_v(wgt, -1, w_rank, w_size);
+        auto select_src = split_v(src, -1, w_rank, w_size);
+        auto select_wgt =
+            attrs.weightsNonTransposed ? split_h(wgt, -1, w_rank, w_size) : split_v(wgt, -1, w_rank, w_size);
         // TODO: by default, we consider the weight is constant.
         // cache for later reuse.
         memory[ARG_SRC] = select_src;
@@ -601,11 +603,11 @@ void FullyConnected::createPrimitive() {
     } else if (tp_mode == 2) {
         // src
         memory[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
-        
+
         // wgt
         // split N direction
-        cached_splited_weight = attrs.weightsNonTransposed ? split_v(wgt, 0, w_rank, w_size)
-                                : split_h(wgt, 0, w_rank, w_size);
+        cached_splited_weight =
+            attrs.weightsNonTransposed ? split_v(wgt, 0, w_rank, w_size) : split_h(wgt, 0, w_rank, w_size);
         // std::cout << "[dbg] ### " << cached_splited_weight->getShape().toString() << "\n";
         // memory[ARG_WEI] = wgt;
         memory[ARG_WEI] = cached_splited_weight;

@@ -211,17 +211,21 @@ void FullyConnected::execute(dnnl::stream strm) {
         auto srcMemoryBuffer = getSrcMemoryAtPort(DATA_ID);
         auto select_src = split_v(srcMemoryBuffer, -1, w_rank, w_size);
         memory[ARG_SRC] = select_src;
+        auto numa_id = context->getCPUStreamExecutor()->get_numa_node_id();
+        // std::cout << "rank: " << w_rank << " numa_id: " << numa_id << "\n";
         auto dstMemoryBuffer = getDstMemoryAtPort(0);
         MemoryPtr dst_mem;
         if (message->_memorys_table[id][w_rank].buf == nullptr) {
             // std::cout << "first allocate memory: " << dstMemoryBuffer->getSize() << "\n";
             dst_mem = std::make_shared<Memory>(context->getEngine(), dstMemoryBuffer->getDescPtr(), nullptr);
+            mbind_move(dst_mem, numa_id);
             message->_memorys_table[id][w_rank].buf = dst_mem;
         } else {
             dst_mem = std::static_pointer_cast<Memory>(message->_memorys_table[id][w_rank].buf);
             if (dst_mem->getSize() < dstMemoryBuffer->getSize()) {
                 // std::cout << "allocate memory\n";
                 dst_mem = std::make_shared<Memory>(context->getEngine(), dstMemoryBuffer->getDescPtr(), nullptr);
+                mbind_move(dst_mem, numa_id);
                 message->_memorys_table[id][w_rank].buf = dst_mem;
             }
         }

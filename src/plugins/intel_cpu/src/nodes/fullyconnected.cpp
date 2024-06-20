@@ -123,7 +123,7 @@ void FullyConnected::execute(dnnl::stream strm) {
     }
 
     if (enable_tensor_parallel) {
-        PROFILE(_prof1, "fc_post");
+        // PROFILE(_prof1, "fc_post");
         // dst
         auto dst = getDstMemoryAtPort(0);
         auto dst_ptr = static_cast<uint8_t*>(dst->getData());
@@ -154,42 +154,46 @@ void FullyConnected::execute(dnnl::stream strm) {
         sub_memory->_memorys_table[id][w_rank].flag = true;
 
         std::vector<int> wait_list(w_size, 1);
-        while (true) {
-            int wait_size = 0;
-            for (int idx = 0; idx < w_size; idx++) {
-                if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag) {
-                    auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
-                    const auto copySize = splited_dim_vec[idx] * prec.size();    // bytes of half selected dim.
-                    // size_t step = count;
-                    // parallel_for(step, [&](size_t i){
-                    //     int dst_offset = i * dims[dim] * prec.size() + idx * strideSize;
-                    //     int src_offset = i * copySize;
-                    //     cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
-                    // });
-                    const size_t unloop = 8;
-                    size_t step = count / unloop;
-                    parallel_for(step, [&](size_t i){
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
-                        cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
-                    });
-                    size_t tail = count & ~(unloop - 1);
-                    for (size_t i = tail; i < count; ++i) {
-                        int dst_offset = i * dims[dim] * prec.size() + idx * strideSize;
-                        int src_offset = i * copySize;
-                        cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
+        {
+            PROFILE(_prof1, "fc_post");
+            while (true) {
+                int wait_size = 0;
+                for (int idx = 0; idx < w_size; idx++) {
+                    if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag) {
+                        auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
+                        const auto copySize = splited_dim_vec[idx] * prec.size();    // bytes of half selected dim.
+                        // size_t step = count;
+                        // parallel_for(step, [&](size_t i){
+                        //     int dst_offset = i * dims[dim] * prec.size() + idx * strideSize;
+                        //     int src_offset = i * copySize;
+                        //     cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
+                        // });
+                        PROFILE(_prof2, std::string("fc_concat_") + std::to_string(idx));
+                        const size_t unloop = 8;
+                        size_t step = count / unloop;
+                        parallel_for(step, [&](size_t i){
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
+                        });
+                        size_t tail = count & ~(unloop - 1);
+                        for (size_t i = tail; i < count; ++i) {
+                            int dst_offset = i * dims[dim] * prec.size() + idx * strideSize;
+                            int src_offset = i * copySize;
+                            cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
+                        }
+                        wait_list[idx] = 0;
                     }
-                    wait_list[idx] = 0;
+                    wait_size += wait_list[idx];
                 }
-                wait_size += wait_list[idx];
-            }
-            if (wait_size == 0) {
-                break;
+                if (wait_size == 0) {
+                    break;
+                }
             }
         }
         {

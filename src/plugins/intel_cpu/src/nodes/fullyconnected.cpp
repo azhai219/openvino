@@ -67,7 +67,8 @@ FullyConnected::FullyConnected(const std::shared_ptr<ov::Node>& op, const GraphC
             w_rank = context->getCPUStreamExecutor()->get_rank()[0];
             w_size = ov::threading::message_manager()->get_num_sub_streams();
             cur_dst_vec = std::vector<MemoryPtr>(w_size, nullptr);
-            enable_tensor_parallel = w_size > 1 ? true : false;
+            // enable_tensor_parallel = w_size > 1 ? true : false;
+            enable_tensor_parallel = false;
             sub_memory = context->getSubMemory();
         }
     }

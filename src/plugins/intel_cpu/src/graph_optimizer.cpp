@@ -1147,7 +1147,8 @@ void GraphOptimizer::FuseConvolutionAndZeroPoints(Graph &graph) {
 }
 
 void GraphOptimizer::FuseFullyConnectedAndSimpleOperation(Graph &graph) {
-    bool enable_tensor_parallel = ov::threading::message_manager()->get_num_sub_streams() > 1 ? true: false;
+    // bool enable_tensor_parallel = ov::threading::message_manager()->get_num_sub_streams() > 1 ? true: false;
+    bool enable_tensor_parallel = false;
     auto& graphNodes = graph.GetNodes();
 
     auto isSuitableParentNode = [](NodePtr node) {

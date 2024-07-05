@@ -254,6 +254,12 @@ private:
     void EnforceInferencePrecision();
     void EnforceBF16();
     void insertReorder(EdgePtr& edge, bool isOptimized, std::unordered_set<std::string>& uniqueLayerNames);
+
+    // tensor parallel
+    int w_rank = -1;
+    int w_size = 0;
+    int id = 0;
+    std::shared_ptr<SubMemoryManager> sub_memory = nullptr;
 };
 
 using GraphPtr = std::shared_ptr<Graph>;

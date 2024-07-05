@@ -43,12 +43,12 @@ ov::intel_cpu::SplitFC::SplitFC(int sub_stream_num) {
         // needn't to split fc when the dim is 0.
         const auto& wgt_shape = fc_weight_node->get_shape();
         // weight shape size 660000 is a trade-off value, which is summarized and verified by LLMs.
-        if (wgt_shape[split_dim] <= 1 || ov::shape_size(wgt_shape) < 6600000) {
-            return false;
-        }
+        // if (wgt_shape[split_dim] <= 1 || ov::shape_size(wgt_shape) < 6600000) {
+        //     return false;
+        // }
 
         // parts will be splited according the sub stream num.
-        int split_num = sub_stream_num + 1;
+        int split_num = sub_stream_num;
 
         auto split_parts = [](int len, int n) {
             int average = len / n;

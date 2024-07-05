@@ -39,6 +39,7 @@
 #include "utils/node_dumper.h"
 #include "utils/verbose.h"
 #include "utils/precision_support.h"
+#include "utils/profiler.hpp"
 
 #include <oneapi/dnnl/dnnl.hpp>
 #include "common/primitive_desc_iface.hpp"
@@ -46,6 +47,7 @@
 #include "openvino/runtime/memory_solver.hpp"
 
 #include "openvino/runtime/threading/cpu_streams_executor.hpp"
+#include "openvino/runtime/threading/cpu_message.hpp"
 #include "openvino/core/parallel.hpp"
 
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO)
@@ -71,6 +73,16 @@ void Graph::CreateGraph(NET &net, const GraphContext::CPtr ctx) {
         ForgetGraphData();
 
     context = ctx;
+    if (context->getCPUStreamExecutor()) {
+        if (!context->getCPUStreamExecutor()->get_rank().empty()) {
+            if (!sub_memory) {
+                w_rank = context->getCPUStreamExecutor()->get_rank()[0];
+                w_size = ov::threading::message_manager()->get_num_sub_streams();
+                sub_memory = context->getSubMemory();
+                id = sub_memory->get_memory_id(w_rank);
+            }
+        }
+    }
 
     Replicate(net);
 
@@ -87,6 +99,16 @@ void Graph::CreateGraph(const std::vector<NodePtr>& graphNodes,
         ForgetGraphData();
 
     context = ctx;
+    if (context->getCPUStreamExecutor()) {
+        if (!context->getCPUStreamExecutor()->get_rank().empty()) {
+            if (!sub_memory) {
+                w_rank = context->getCPUStreamExecutor()->get_rank()[0];
+                w_size = ov::threading::message_manager()->get_num_sub_streams();
+                sub_memory = context->getSubMemory();
+                id = sub_memory->get_memory_id(w_rank);
+            }
+        }
+    }
 
     this->_name = std::move(name);
     this->reuse_io_tensors = false;
@@ -1013,6 +1035,7 @@ bool Graph::ProcessDynNodes() {
 }
 
 void Graph::PushInputData(const std::size_t& index, const ov::SoPtr<ITensor>& input) {
+    PROFILE(_prof, "Graph::PushOutputData");
     if (!IsReady()) OPENVINO_THROW("Wrong state. Topology not ready.");
     auto input_itr = inputNodesMap.find(index);
     if (input_itr != inputNodesMap.end()) {
@@ -1045,6 +1068,7 @@ void Graph::PushInputData(const std::size_t& index, const ov::SoPtr<ITensor>& in
 
 // suppose always being shared infer_request intel_cpu::Tensor to Graph if isDynamic.
 void Graph::PullOutputData(std::unordered_map<std::size_t, ov::SoPtr<ITensor>>& output) {
+    PROFILE(_prof, "Graph::PullOutputData");
     if (!IsReady())
         OPENVINO_THROW("Wrong state. Topology not ready.");
 
@@ -1123,6 +1147,7 @@ void Graph::PullOutputData(std::unordered_map<std::size_t, ov::SoPtr<ITensor>>& 
 }
 
 void Graph::InferStatic(SyncInferRequest* request) {
+    PROFILE(_prof0, std::string("Graph::InferStatic_#") + std::to_string(infer_count));
     dnnl::stream stream(getEngine());
 
     for (const auto& node : m_executableGraphNodes) {
@@ -1342,6 +1367,7 @@ public:
 
 
 void Graph::InferDynamic(SyncInferRequest* request) {
+    PROFILE(_prof0, std::string("Graph::InferDynamic_#") + std::to_string(infer_count));
     dnnl::stream stream(getEngine());
 
     std::unique_ptr<IUpdateNodes> updateNodes{};
@@ -1353,12 +1379,16 @@ void Graph::InferDynamic(SyncInferRequest* request) {
 
     size_t inferCounter = 0;
     for (auto stopIndx : m_executableSyncNodesInds) {
-        updateNodes->run(stopIndx);
+        {
+            PROFILE(_prof, "updateNodes");
+            updateNodes->run(stopIndx);
+        }
         for (; inferCounter < stopIndx; ++inferCounter) {
             auto& node = m_executableGraphNodes[inferCounter];
             VERBOSE(node, getConfig().debugCaps.verbose);
             PERF(node, getConfig().collectPerfCounters);
 
+            PROFILE(_prof, node->getTypeStr(), node->getName());
             if (request)
                 request->throw_if_canceled();
             try {
@@ -1371,28 +1401,77 @@ void Graph::InferDynamic(SyncInferRequest* request) {
 }
 
 inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) const {
+     // TODO: 132954 workaround for latency
+     int subStreamID = -1;
+#if defined(__x86_64__) && defined(__linux__)
+     if ((getGraphContext()->getCPUStreamExecutor()) && (getConfig().hintPerfMode == ov::hint::PerformanceMode::LATENCY)) {
+         subStreamID = getGraphContext()->getCPUStreamExecutor()->get_numa_node_id();
+     }
+#endif
     if (!node->parallelWith.empty()) {
         // run nodes in parallel
         auto& parallelNodes = node->parallelWith;
         if (node == parallelNodes[0]) {
-            if (const auto& cpuExecutor = context->getCPUStreamExecutor()) {
-                auto num_parallel_nodes = parallelNodes.size();
-                ParalleMtNuma(num_parallel_nodes, cpuExecutor, [&](int subStreamID, size_t i) {
-                    auto& n = parallelNodes[i];
-
-                    if (n->isDynamicNode()) {
-                        n->executeDynamic(stream, subStreamID);
-                    } else {
-                        n->executeStatic(stream, subStreamID);
+            if (context->getCPUStreamExecutor()) {
+                if (!context->getCPUStreamExecutor()->get_rank().empty()) {
+                    // compute current node
+                    auto cur_fc_node = parallelNodes[w_rank];
+                    {
+                        PROFILE(_prof1, node->getTypeStr(), node->getName() + std::to_string(w_rank));
+                        if (cur_fc_node->isDynamicNode()) {
+                            cur_fc_node->executeDynamic(stream, subStreamID);
+                        } else {
+                            cur_fc_node->executeStatic(stream, subStreamID);
+                        }
                     }
-                });
-            } else {
-                // fallback to serialize executor
-                for (auto& node : parallelNodes) {
-                    if (node->isDynamicNode()) {
-                        node->executeDynamic(stream);
-                    } else {
-                        node->executeStatic(stream);
+
+                    PROFILE(_prof1, "wait_node");
+                    // sync
+                    sub_memory->set_memory_used(id, w_rank);
+                    while (true) {
+                        std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
+                        if (sub_memory->_use_count[id] == w_size) {
+                            sub_memory->_use_count[id] = 0;
+                            for (int i = 0; i < w_size; i++) {
+                                sub_memory->_memorys_table[id][i].flag = false;
+                            }
+                        }
+                        if (sub_memory->_use_count[id] == 0) {
+                            break;
+                        }
+                    }
+
+                    // send buffer
+                    auto cur_fc_out = cur_fc_node->getDstMemoryAtPort(0);
+
+                    sub_memory->_memorys_table[id][w_rank].send_buf = cur_fc_out->getData();
+                    sub_memory->_memorys_table[id][w_rank].flag = true;
+
+                    std::vector<int> wait_list(w_size, 1);
+                    while(true) {
+                        int wait_size = 0;
+                        for (int idx = 0; idx < w_size; idx++) {
+                            if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag && idx != w_rank) {
+                                // receive buffer
+                                auto other_fc_node = parallelNodes[idx];
+                                auto other_fc_out = other_fc_node->getDstMemoryAtPort(0);
+                                auto dst_ptr = static_cast<uint8_t*>(other_fc_out->getData());
+                                auto mem_size = other_fc_out->getSize();
+
+                                auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
+                                // execute copy to other_fc_node
+                                cpu_parallel_memcpy(dst_ptr, new_ptr, mem_size);
+                                wait_list[idx] = 0;
+                            }
+                            wait_size += wait_list[idx];
+                        }
+                        if (wait_size == 1) {
+                            break;
+                        }
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
+                        sub_memory->_use_count[id]++;
                     }
                 }
             }
@@ -1401,13 +1480,6 @@ inline void Graph::ExecuteNode(const NodePtr& node, const dnnl::stream& stream) 
         DUMP(node, getConfig().debugCaps, infer_count);
         OV_ITT_SCOPED_TASK(itt::domains::intel_cpu, node->profiling.execute);
         DEBUG_LOG(*node);
-        // TODO: 132954 workaround for latency
-        int subStreamID = -1;
-#if defined(__x86_64__) && defined(__linux__)
-        if ((getGraphContext()->getCPUStreamExecutor()) && (getConfig().hintPerfMode == ov::hint::PerformanceMode::LATENCY)) {
-            subStreamID = getGraphContext()->getCPUStreamExecutor()->get_numa_node_id();
-        }
-#endif
         if (node->isDynamicNode()) {
             node->executeDynamic(stream, subStreamID);
         } else {
@@ -1468,7 +1540,8 @@ void Graph::Infer(SyncInferRequest* request) {
         OPENVINO_THROW("Unknown ov::intel_cpu::Graph state: " , static_cast<size_t>(status));
     }
 
-    if (infer_count != -1) infer_count++;
+    // if (infer_count != -1) infer_count++;
+    infer_count++;
 }
 
 void Graph::SortTopologically() {

@@ -713,7 +713,7 @@ MemoryPtr split_horizontal(const dnnl::engine& eng, const MemoryPtr src, int dim
     }
 
     auto srcPtr = static_cast<uint8_t*>(src->getData());
-    if (prec == ov::element::u4) {
+    if (prec == ov::element::u4 || prec == ov::element::i4) {
         stride /= 2;
     }
 
@@ -770,7 +770,7 @@ MemoryPtr split_vertical(const dnnl::engine& eng, const MemoryPtr src, int dim, 
     // int stride = splited_dim_vec[0]; // elements of half selected dim.
     auto strideSize = splited_dim_vec[0] * element_size; // bytes of half selected dim.
     auto copySize = splited_dim_vec[w_rank] * element_size;
-    if (prec == ov::element::u4) {
+    if (prec == ov::element::u4 || prec == ov::element::i4) {
         strideSize /= 2;
         copySize /= 2;
     }

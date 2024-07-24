@@ -14,8 +14,10 @@ public:
     OPENVINO_RTTI("MarkUpFcFollowingPa", "0");
     MarkUpFcFollowingPa();
 private:
-    std::deque<std::shared_ptr<ov::Node>> nodes;
+    void bfs_fc(std::shared_ptr<ov::Node> input);
+    // std::deque<std::shared_ptr<ov::Node>> nodes;
     std::unordered_set<std::shared_ptr<ov::Node>> visited;
+    std::unordered_set<std::shared_ptr<ov::Node>> has_visited;
 };
 
 }   // namespace intel_cpu

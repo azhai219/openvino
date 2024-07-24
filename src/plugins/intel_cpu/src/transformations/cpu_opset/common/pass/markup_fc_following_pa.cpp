@@ -15,50 +15,43 @@
 #include "transformations/utils/gen_pattern.hpp"
 #include "transformations/utils/utils.hpp"
 #include "openvino/op/paged_attention.hpp"
+#include "transformations/cpu_opset/common/op/fully_connected.hpp"
 
+void ov::intel_cpu::MarkUpFcFollowingPa::bfs_fc(std::shared_ptr<ov::Node> input) {
+    const size_t input_num = input->get_input_size();
+    for (int i = 0; i < input_num; ++i) {
+        auto cur_node = input->get_input_node_shared_ptr(i);
+        if (ov::is_type<opset1::Parameter>(cur_node)) {
+            continue;
+        }
+        if (ov::is_type<opset1::Constant>(cur_node)) {
+            continue;
+        }
+        if (ov::is_type<ov::op::PagedAttentionExtension>(cur_node)) {
+            continue;
+        }
+        if (ov::is_type<ov::intel_cpu::FullyConnectedNode>(cur_node)) {
+            if (has_visited.insert(cur_node).second) {
+                visited.insert(cur_node);
+            }
+        }
+        bfs_fc(cur_node);
+    }
+}
 ov::intel_cpu::MarkUpFcFollowingPa::MarkUpFcFollowingPa() {
     MATCHER_SCOPE(MarkUpFcFollowingPa);
     using namespace ov::pass::pattern;
     using namespace ov::gen_pattern;
-    auto pa = makePattern<ov::op::PagedAttentionExtension>();
+    auto pa = makePattern<ov::op::PagedAttentionExtension>({});
 
     ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
+        visited.clear();
         const auto& pattern_map = m.get_pattern_value_map();
         auto root = m.get_match_root();
         if (!root) {
             return false;
         }
-        std::cout << "[debug] pa name: " << root->get_friendly_name() << "\n";
-        auto q = root->get_input_node_shared_ptr(0);
-        auto k = root->get_input_node_shared_ptr(1);
-        auto v = root->get_input_node_shared_ptr(2);
-        // auto cos_input_node = pattern_map.at(cos_tab).get_node_shared_ptr();
-        // auto sin_input_node = pattern_map.at(sin_tab).get_node_shared_ptr();
-        // auto bfs_markup = [&](std::shared_ptr<ov::Node>& input) {
-        //     nodes.push_back(input);
-        //     while (!nodes.empty()) {
-        //         auto curr_node = nodes.front();
-        //         nodes.pop_front();
-        //         visited.insert(curr_node);
-        //         // visit cur node
-        //         ov::disable_fp16_compression(curr_node);
-        //         // extend parent nodes
-        //         for (auto& input_value : curr_node->input_values()) {
-        //             const auto& input_node = input_value.get_node_shared_ptr();
-        //             if (visited.count(input_node)) {
-        //                 continue;
-        //             }
-        //             if (!ov::is_type<ov::op::v0::Constant>(input_node) && !ov::is_type<ov::op::v0::Parameter>(input_node))
-        //                 nodes.push_front(input_node);
-        //         }
-        //     }
-        // };
-        // if (!visited.count(cos_input_node)) {
-        //     bfs_markup(cos_input_node);
-        // }
-        // if (!visited.count(sin_input_node)) {
-        //     bfs_markup(sin_input_node);
-        // }
+        bfs_fc(root);
         return false;
     };
 

@@ -19,6 +19,7 @@ CPU
 
    .. tab-item:: Supported Hardware
 
+      * Intel® Xeon® 6 processor (preview)
       * Intel Atom® Processor X Series
       * Intel Atom® processor with Intel® SSE4.2 support
       * Intel® Pentium® processor N4200/5, N3350/5, N3450/5 with Intel® HD Graphics
@@ -29,6 +30,7 @@ CPU
 
    .. tab-item:: Supported Operating Systems
 
+      * Ubuntu 24.04 long-term support (LTS), 64-bit (Kernel 6.8+) (preview support)
       * Ubuntu 22.04 long-term support (LTS), 64-bit (Kernel 5.15+)
       * Ubuntu 20.04 long-term support (LTS), 64-bit (Kernel 5.15+)
       * Ubuntu 18.04 long-term support (LTS) with limitations, 64-bit (Kernel 5.4+)
@@ -58,6 +60,7 @@ GPU
 
    .. tab-item::  Supported Operating Systems
 
+      * Ubuntu 24.04 long-term support (LTS), 64-bit (preview support)
       * Ubuntu 22.04 long-term support (LTS), 64-bit
       * Ubuntu 20.04 long-term support (LTS), 64-bit
       * Windows 10, 64-bit
@@ -87,6 +90,7 @@ Intel® Neural Processing Unit
 
    .. tab-item:: Operating Systems for NPU
 
+      * Ubuntu 24.04 long-term support (LTS), 64-bit (preview support)
       * Ubuntu 22.04 long-term support (LTS), 64-bit
       * Windows 11, 64-bit (22H2, 23H2)
 
@@ -98,6 +102,7 @@ Intel® Neural Processing Unit
         the :doc:`download page <../../get-started/install-openvino>`.
 
 
+
 Operating systems and developer environment
 #######################################################
 
@@ -105,6 +110,7 @@ Operating systems and developer environment
 
    .. tab-item:: Linux OS
 
+      * Ubuntu 24.04 with Linux kernel 6.8+ (preview support)
       * Ubuntu 22.04 with Linux kernel 5.15+
       * Ubuntu 20.04 with Linux kernel 5.15+
       * Red Hat Enterprise Linux 8 with Linux kernel 5.4

@@ -87,6 +87,11 @@ void PagedAttention::initSupportedPrimitiveDescriptors() {
         past_kv_input_mem_precision, getInputShapeAtPort(PagedAttentionExecutor::ID_KCACHE)));
     config.inConfs[PagedAttentionExecutor::ID_VCACHE].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(
         past_kv_input_mem_precision, getInputShapeAtPort(PagedAttentionExecutor::ID_VCACHE)));
+    auto q_s = getInputShapeAtPort(PagedAttentionExecutor::ID_Q).toString();
+    auto k_s = getInputShapeAtPort(PagedAttentionExecutor::ID_K).toString();
+    auto v_s = getInputShapeAtPort(PagedAttentionExecutor::ID_V).toString();
+    auto kc_s = getInputShapeAtPort(PagedAttentionExecutor::ID_KCACHE).toString();
+    auto vc_s = getInputShapeAtPort(PagedAttentionExecutor::ID_VCACHE).toString();
     // past_lens, int, [b_seq]
     config.inConfs[PagedAttentionExecutor::ID_PAST_LENS].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(
         ov::element::i32, getInputShapeAtPort(PagedAttentionExecutor::ID_PAST_LENS)));

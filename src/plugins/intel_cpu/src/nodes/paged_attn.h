@@ -45,6 +45,11 @@ private:
     friend struct PagedAttentionKey;
 
     bool m_hasScore = false;
+
+    // tensor parallel
+    int w_rank = -1;
+    int w_size = -1;
+    bool enable_tensor_parallel = false;
 };
 
 }  // namespace node

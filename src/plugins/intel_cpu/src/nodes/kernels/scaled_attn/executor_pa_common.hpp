@@ -33,6 +33,12 @@ struct PagedAttentionExecutor {
     static const size_t ID_SLIDING_WINDOW = 10;             // []
     static const size_t ID_ALIBI_SLOPES = 11;               // [H|0], float
     static const size_t ID_MAX_CONTEXT_LEN = 12;            // []
+    // Tensor Parallel params
+    int w_rank = -1;
+    int w_size = -1;
+    bool enable_tensor_parallel = false;
+    const int head_axis = 1;
+    // Execute Func
     virtual void execute(const std::vector<ov::intel_cpu::MemoryPtr>& inputs, const std::vector<ov::intel_cpu::MemoryPtr> outputs) = 0;
 };
 

@@ -13,6 +13,7 @@
 #include "onednn/dnnl.h"
 #include "openvino/core/parallel.hpp"
 #include "openvino/util/common_util.hpp"
+#include "openvino/runtime/threading/cpu_message.hpp"
 #include "shape_inference/shape_inference_internal_dyn.hpp"
 
 #include "utils/plain_tensor.hpp"
@@ -58,6 +59,14 @@ PagedAttention::PagedAttention(const std::shared_ptr<ov::Node>& op, const GraphC
     std::string errorMessage;
     if (!isSupportedOperation(op, errorMessage)) {
         OPENVINO_THROW("CPU: " + errorMessage);
+    }
+    if (context->getCPUStreamExecutor()) {
+        if (!context->getCPUStreamExecutor()->get_rank().empty()) {
+            // init w_rank and w_size
+            w_rank = context->getCPUStreamExecutor()->get_rank()[0];
+            w_size = ov::threading::message_manager()->get_num_sub_streams();
+            enable_tensor_parallel = w_size > 1 ? true : false;
+        }
     }
     // output score may have no child
     m_hasScore = !op->get_output_target_inputs(1).empty();
@@ -146,6 +155,10 @@ void PagedAttention::createPrimitive() {
         OPENVINO_THROW("PagedAttention AttentionExecutor creation fails with precision " + rtPrecision.to_string());
     }
     m_executor = result.first;
+    // set tensor parallel config
+    m_executor->w_rank = w_rank;
+    m_executor->w_size = w_size;
+    m_executor->enable_tensor_parallel = enable_tensor_parallel;
 }
 
 void PagedAttention::execute(dnnl::stream strm) {

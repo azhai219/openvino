@@ -1483,13 +1483,14 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         q.reset(inputs[ID_Q]);                                      // [B_token, H * S]
         k.reset(inputs[ID_K]);
         v.reset(inputs[ID_V]);
+        k_cache.reset(inputs[ID_KCACHE]);                           // [NUM_BLOCKS, H, 32, S]
+        v_cache.reset(inputs[ID_VCACHE]);                           // [NUM_BLOCKS, H, 32, S]
+        // TODO tensor parallelism
         auto q_s = dims2str(q.shape());
         auto k_s = dims2str(k.shape());
         auto v_s = dims2str(v.shape());
         auto kc_s = dims2str(k_cache.shape());
         auto vc_s = dims2str(v_cache.shape());
-        k_cache.reset(inputs[ID_KCACHE]);                           // [NUM_BLOCKS, H, 32, S]
-        v_cache.reset(inputs[ID_VCACHE]);                           // [NUM_BLOCKS, H, 32, S]
         past_lens.reset(inputs[ID_PAST_LENS]);                      // [B_seq]
         subsequence_begins.reset(inputs[ID_SUBSEQUENCE_BEGINS]);    // [B_seq+1]
         block_indices.reset(inputs[ID_BLOCK_INDICES]);              // [num_blocks]

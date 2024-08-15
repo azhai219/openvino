@@ -1474,6 +1474,10 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     MHAHelper<DATA_TYPE, KVCACHE_TYPE> _helper;
     MHA<DATA_TYPE, KVCACHE_TYPE> _kernel;
     PlainTensor _slot_mapping;
+    // tensor parallel
+    PlainTensor sub_q;
+    PlainTensor sub_k;
+    PlainTensor sub_v;
 
     AttentionExecutor() : _kernel(_helper) {}
 
@@ -1486,9 +1490,33 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         k_cache.reset(inputs[ID_KCACHE]);                           // [NUM_BLOCKS, H, 32, S]
         v_cache.reset(inputs[ID_VCACHE]);                           // [NUM_BLOCKS, H, 32, S]
         // TODO tensor parallelism
+        auto split_parts = [](size_t len, size_t n) {
+            int average = len / n;
+            std::vector<size_t> parts(n, average);
+            parts.back() = len - average * (n - 1);
+            return parts;
+        };
+        auto q_slice_vec = split_parts(inputs[ID_Q]->getStaticDims().back(), w_size);
+        auto q_start = w_rank * q_slice_vec[0];
+        auto q_stop = w_rank * q_slice_vec[0] + q_slice_vec[w_rank];
+
+        auto k_slice_vec = split_parts(inputs[ID_K]->getStaticDims().back(), w_size);
+        auto k_start = w_rank * k_slice_vec[0];
+        auto k_stop = w_rank * k_slice_vec[0] + k_slice_vec[w_rank];
+
+        auto v_slice_vec = split_parts(inputs[ID_V]->getStaticDims().back(), w_size);
+        auto v_start = w_rank * v_slice_vec[0];
+        auto v_stop = w_rank * v_slice_vec[0] + v_slice_vec[w_rank];
+
+        sub_q = q.slice(head_axis, q_start, q_stop);
+        sub_k = k.slice(head_axis, k_start, k_stop);
+        sub_v = v.slice(head_axis, v_start, v_stop);
+
         auto q_s = dims2str(q.shape());
+        auto subq_s = dims2str(sub_q.shape());
         auto k_s = dims2str(k.shape());
         auto v_s = dims2str(v.shape());
+
         auto kc_s = dims2str(k_cache.shape());
         auto vc_s = dims2str(v_cache.shape());
         past_lens.reset(inputs[ID_PAST_LENS]);                      // [B_seq]

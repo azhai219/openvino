@@ -1475,50 +1475,66 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     MHA<DATA_TYPE, KVCACHE_TYPE> _kernel;
     PlainTensor _slot_mapping;
     // tensor parallel
-    PlainTensor sub_q;
-    PlainTensor sub_k;
-    PlainTensor sub_v;
+    // PlainTensor sub_q;
+    // PlainTensor sub_k;
+    // PlainTensor sub_v;
+    MemoryPtr sub_q = nullptr;
+    MemoryPtr sub_k = nullptr;
+    MemoryPtr sub_v = nullptr;
+    MemoryPtr sub_k_cache = nullptr;
+    MemoryPtr sub_v_cache = nullptr;
+    MemoryPtr sub_output_emb = nullptr;
+    MemoryPtr sub_output_score = nullptr;
 
     AttentionExecutor() : _kernel(_helper) {}
 
     void init(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr>& outputs, PlainTensor& q, PlainTensor& k, PlainTensor& v, PlainTensor& k_cache,
         PlainTensor& v_cache, PlainTensor& past_lens, PlainTensor& subsequence_begins, PlainTensor& block_indices, PlainTensor& block_indices_begins,
         float& scale, size_t& sliding_window, PlainTensor& alibi_slopes, size_t& max_context_len, PlainTensor& output_emb, PlainTensor& output_score) {
-        q.reset(inputs[ID_Q]);                                      // [B_token, H * S]
-        k.reset(inputs[ID_K]);
-        v.reset(inputs[ID_V]);
-        k_cache.reset(inputs[ID_KCACHE]);                           // [NUM_BLOCKS, H, 32, S]
-        v_cache.reset(inputs[ID_VCACHE]);                           // [NUM_BLOCKS, H, 32, S]
+        if (enable_tensor_parallel) {
+            q.reset(sub_q);
+            k.reset(sub_k);
+            v.reset(sub_v);
+            k_cache.reset(sub_k_cache);
+            v_cache.reset(sub_v_cache);
+        } else {
+            q.reset(inputs[ID_Q]);                                      // [B_token, H * S]
+            k.reset(inputs[ID_K]);
+            v.reset(inputs[ID_V]);
+            k_cache.reset(inputs[ID_KCACHE]);                           // [NUM_BLOCKS, H, 32, S]
+            v_cache.reset(inputs[ID_VCACHE]);                           // [NUM_BLOCKS, H, 32, S]
+        }
         // TODO tensor parallelism
-        auto split_parts = [](size_t len, size_t n) {
-            int average = len / n;
-            std::vector<size_t> parts(n, average);
-            parts.back() = len - average * (n - 1);
-            return parts;
-        };
-        auto q_slice_vec = split_parts(inputs[ID_Q]->getStaticDims().back(), w_size);
-        auto q_start = w_rank * q_slice_vec[0];
-        auto q_stop = w_rank * q_slice_vec[0] + q_slice_vec[w_rank];
+        // auto split_parts = [](size_t len, size_t n) {
+        //     int average = len / n;
+        //     std::vector<size_t> parts(n, average);
+        //     parts.back() = len - average * (n - 1);
+        //     return parts;
+        // };
+        // auto q_slice_vec = split_parts(inputs[ID_Q]->getStaticDims().back(), w_size);
+        // auto q_start = w_rank * q_slice_vec[0];
+        // auto q_stop = w_rank * q_slice_vec[0] + q_slice_vec[w_rank];
 
-        auto k_slice_vec = split_parts(inputs[ID_K]->getStaticDims().back(), w_size);
-        auto k_start = w_rank * k_slice_vec[0];
-        auto k_stop = w_rank * k_slice_vec[0] + k_slice_vec[w_rank];
+        // auto k_slice_vec = split_parts(inputs[ID_K]->getStaticDims().back(), w_size);
+        // auto k_start = w_rank * k_slice_vec[0];
+        // auto k_stop = w_rank * k_slice_vec[0] + k_slice_vec[w_rank];
 
-        auto v_slice_vec = split_parts(inputs[ID_V]->getStaticDims().back(), w_size);
-        auto v_start = w_rank * v_slice_vec[0];
-        auto v_stop = w_rank * v_slice_vec[0] + v_slice_vec[w_rank];
+        // auto v_slice_vec = split_parts(inputs[ID_V]->getStaticDims().back(), w_size);
+        // auto v_start = w_rank * v_slice_vec[0];
+        // auto v_stop = w_rank * v_slice_vec[0] + v_slice_vec[w_rank];
 
-        sub_q = q.slice(head_axis, q_start, q_stop);
-        sub_k = k.slice(head_axis, k_start, k_stop);
-        sub_v = v.slice(head_axis, v_start, v_stop);
+        // auto subq_s = dims2str(sub_q.shape());
+        // sub_q = q.slice(head_axis, q_start, q_stop);
+        // sub_k = k.slice(head_axis, k_start, k_stop);
+        // sub_v = v.slice(head_axis, v_start, v_stop);
 
         auto q_s = dims2str(q.shape());
-        auto subq_s = dims2str(sub_q.shape());
         auto k_s = dims2str(k.shape());
         auto v_s = dims2str(v.shape());
 
         auto kc_s = dims2str(k_cache.shape());
         auto vc_s = dims2str(v_cache.shape());
+
         past_lens.reset(inputs[ID_PAST_LENS]);                      // [B_seq]
         subsequence_begins.reset(inputs[ID_SUBSEQUENCE_BEGINS]);    // [B_seq+1]
         block_indices.reset(inputs[ID_BLOCK_INDICES]);              // [num_blocks]
@@ -1528,7 +1544,14 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         if (!inputs[ID_ALIBI_SLOPES]->getShape().hasZeroDims())
             alibi_slopes.reset(inputs[ID_ALIBI_SLOPES]);
         max_context_len = static_cast<size_t>(*inputs[ID_MAX_CONTEXT_LEN]->getDataAs<int32_t>());
-        output_emb.reset(outputs[0]);
+
+        // tensor parallel
+        if (enable_tensor_parallel) {
+            output_emb.reset(sub_output_emb);
+        } else {
+            output_emb.reset(outputs[0]);
+        }
+
         if (outputs.size() == 2)
             output_score.reset(outputs[1]);
 
@@ -1603,6 +1626,30 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         }
     }
 
+    void slice_input_and_output(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr> outputs) {
+        // input
+        // q, k, v
+        sub_q = split_memory(eng, inputs[ID_Q], head_axis, w_rank, w_size);
+        sub_k = split_memory(eng, inputs[ID_K], head_axis, w_rank, w_size);
+        sub_v = split_memory(eng, inputs[ID_V], head_axis, w_rank, w_size);
+        auto q_s = dims2str(inputs[ID_Q]->getStaticDims());
+        auto subq_s = dims2str(sub_q->getStaticDims());
+        // kv cache
+        sub_k_cache = split_memory(eng, inputs[ID_KCACHE], head_axis, w_rank, w_size);
+        sub_v_cache = split_memory(eng, inputs[ID_VCACHE], head_axis, w_rank, w_size);
+        auto kc_s = dims2str(inputs[ID_KCACHE]->getStaticDims());
+        auto subkc_s = dims2str(sub_k_cache->getStaticDims());
+        // output
+        sub_output_emb = split_memory(eng, outputs[0], head_axis, w_rank, w_size);
+        auto o0_s = dims2str(outputs[0]->getStaticDims());
+        auto subo0_s = dims2str(sub_output_emb->getStaticDims());
+        printf("[debug] slice inputs and outputs\n");
+    }
+
+    void merge_output() {
+        // todo
+    }
+
     void execute(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr> outputs) override {
         PlainTensor q, k, v, k_cache, v_cache;
         PlainTensor past_lens, subsequence_begins, block_indices, block_indices_begins;
@@ -1613,12 +1660,20 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         PlainTensor output_emb;
         PlainTensor output_score;
 
+        if (enable_tensor_parallel) {
+            slice_input_and_output(inputs, outputs);
+        }
+
         init(inputs, outputs, q, k, v, k_cache, v_cache, past_lens, subsequence_begins, block_indices, block_indices_begins,
             scale, sliding_window, alibi_slopes, max_context_len, output_emb, output_score);
         concat_pastkv(k, v, k_cache, v_cache, past_lens, subsequence_begins, block_indices, block_indices_begins);
 
         _kernel(q, k_cache, v_cache, output_emb, output_score, max_context_len, past_lens, subsequence_begins, block_indices,
             block_indices_begins, alibi_slopes);
+
+        if (enable_tensor_parallel) {
+            merge_output();    
+        }
     }
 };
 #endif

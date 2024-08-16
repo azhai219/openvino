@@ -778,5 +778,87 @@ MemoryPtr split_vertical(const dnnl::engine& eng, const MemoryPtr src, int dim, 
     return ptr;
 }
 
+MemoryPtr split_memory(const dnnl::engine& eng, const MemoryPtr src, int axis, int w_rank, int w_size, bool need_fill) {
+    auto desc = src->getDescPtr();
+    auto shape = src->getShape();
+    auto dims = shape.getDims();
+    auto prec = src->getPrecision();
+    if (axis < 0) {
+        axis += dims.size();
+    }
+
+    auto split_parts = [](int len, int n) {
+        int average = len / n;
+        std::vector<int> parts(n, average);
+        parts.back() = len - average * (n - 1);
+        return parts;
+    };
+
+    if (shape.isDynamic()) {
+        const auto& pshape = shape.toPartialShape();
+        if (pshape[axis].is_dynamic()) {
+            OPENVINO_THROW("Can't split data with dynamic shapes");
+        }
+        auto new_pshape = pshape;
+        auto splited_dim_vec = split_parts(new_pshape[axis].get_length(), w_size);
+        new_pshape[axis] = splited_dim_vec[w_rank];
+
+        auto new_desc = std::make_shared<CpuBlockedMemoryDesc>(prec, Shape{new_pshape});
+        MemoryPtr ptr = std::make_shared<Memory>(eng, new_desc);
+        return ptr;
+    }
+
+    assert(dims[axis] >= w_size);
+    // split the dim at the specific axis into several parts.
+    auto splited_dim_vec = split_parts(dims[axis], w_size);
+
+    // create new desc and new MemoryPtr
+    VectorDims new_dims = dims;
+    new_dims[axis] = splited_dim_vec[w_rank];
+    auto new_desc = desc->cloneWithNewDims(new_dims, true);
+    MemoryPtr ptr = std::make_shared<Memory>(eng, new_desc);
+
+    // return empty MemoryPtr
+    if (!need_fill) {
+        return ptr;
+    }
+
+    auto element_size = prec.size();
+
+    // step
+    size_t step = 1;
+    for (size_t idx=0; idx < axis; ++idx) {
+        if (dims[idx] == 0) {
+            continue;
+        }
+        step *= dims[idx];
+    }
+    // last size
+    size_t lastsize = 1;
+    for (size_t idx=axis+1; idx < dims.size(); ++idx) {
+        if (dims[idx] == 0) {
+            continue;
+        }
+        lastsize *= dims[idx];
+    }
+    //
+    const auto splited_size = dims[axis] * lastsize * element_size;
+    auto strideSize = splited_dim_vec[0] * lastsize * element_size;
+    auto copySize = splited_dim_vec[w_rank] * lastsize * element_size;
+    if (prec == ov::element::u4 || prec == ov::element::i4) {
+        strideSize /= 2;
+        copySize /= 2;
+    }
+    // copy
+    auto srcPtr = static_cast<uint8_t*>(src->getData());
+    auto dstPtr = static_cast<uint8_t*>(ptr->getData());
+    parallel_for(step, [&](int i){
+        int dst_offset = i * copySize;
+        int src_offset = i * splited_size + w_rank * strideSize;
+        cpu_parallel_memcpy(dstPtr + dst_offset, srcPtr + src_offset, copySize);
+    });
+    return ptr;
+}
+
 }   // namespace intel_cpu
 }   // namespace ov

@@ -38,6 +38,7 @@ struct PagedAttentionExecutor {
     int w_size = -1;
     bool enable_tensor_parallel = false;
     const int head_axis = 1;
+    dnnl::engine eng;
     // Execute Func
     virtual void execute(const std::vector<ov::intel_cpu::MemoryPtr>& inputs, const std::vector<ov::intel_cpu::MemoryPtr> outputs) = 0;
 };

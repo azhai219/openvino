@@ -159,6 +159,7 @@ void PagedAttention::createPrimitive() {
     m_executor->w_rank = w_rank;
     m_executor->w_size = w_size;
     m_executor->enable_tensor_parallel = enable_tensor_parallel;
+    m_executor->eng = context->getEngine();
 }
 
 void PagedAttention::execute(dnnl::stream strm) {

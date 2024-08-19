@@ -11,6 +11,7 @@
 #include "cpu_memory.h"
 #include "cpu/x64/cpu_isa_traits.hpp"
 #include "cpu/x64/jit_generator.hpp"
+#include "sub_memory_manager.hpp"
 
 namespace ov {
 namespace Extensions {
@@ -36,7 +37,9 @@ struct PagedAttentionExecutor {
     // Tensor Parallel params
     int w_rank = -1;
     int w_size = -1;
+    int id = 0;
     bool enable_tensor_parallel = false;
+    std::shared_ptr<ov::intel_cpu::SubMemoryManager> sub_memory = nullptr;
     const int head_axis = 1;
     dnnl::engine eng;
     // Execute Func

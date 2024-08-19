@@ -65,7 +65,8 @@ PagedAttention::PagedAttention(const std::shared_ptr<ov::Node>& op, const GraphC
             // init w_rank and w_size
             w_rank = context->getCPUStreamExecutor()->get_rank()[0];
             w_size = ov::threading::message_manager()->get_num_sub_streams();
-            enable_tensor_parallel = w_size > 1 ? true : false;
+            // enable_tensor_parallel = w_size > 1 ? true : false;
+            enable_tensor_parallel = false;
         }
     }
     // output score may have no child
@@ -159,6 +160,7 @@ void PagedAttention::createPrimitive() {
     m_executor->w_rank = w_rank;
     m_executor->w_size = w_size;
     m_executor->enable_tensor_parallel = enable_tensor_parallel;
+    m_executor->sub_memory = context->getSubMemory();
     m_executor->eng = context->getEngine();
 }
 

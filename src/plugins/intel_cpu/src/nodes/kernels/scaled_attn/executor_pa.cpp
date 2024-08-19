@@ -25,6 +25,7 @@
 #include "attn_memcpy.hpp"
 #include "attn_quant.hpp"
 #include "nodes/kernels/x64/brgemm_kernel.hpp"
+#include "nodes/common/cpu_memcpy.h"
 
 namespace ov {
 namespace Extensions {
@@ -1629,9 +1630,13 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     void slice_input_and_output(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr> outputs) {
         // input
         // q, k, v
-        sub_q = split_memory(eng, inputs[ID_Q], head_axis, w_rank, w_size);
-        sub_k = split_memory(eng, inputs[ID_K], head_axis, w_rank, w_size);
-        sub_v = split_memory(eng, inputs[ID_V], head_axis, w_rank, w_size);
+        auto inq = inputs[ID_Q];
+        auto ink = inputs[ID_K];
+        auto inv = inputs[ID_V];
+
+        sub_q = split_memory(eng, inq, head_axis, w_rank, w_size);
+        sub_k = split_memory(eng, ink, head_axis, w_rank, w_size);
+        sub_v = split_memory(eng, inv, head_axis, w_rank, w_size);
         auto q_s = dims2str(inputs[ID_Q]->getStaticDims());
         auto subq_s = dims2str(sub_q->getStaticDims());
         // kv cache
@@ -1643,11 +1648,99 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         sub_output_emb = split_memory(eng, outputs[0], head_axis, w_rank, w_size);
         auto o0_s = dims2str(outputs[0]->getStaticDims());
         auto subo0_s = dims2str(sub_output_emb->getStaticDims());
-        printf("[debug] slice inputs and outputs\n");
     }
 
-    void merge_output() {
-        // todo
+    void init_sub_memory() {
+        if (enable_tensor_parallel) {
+            id = sub_memory->get_memory_id(w_rank);
+            sub_memory->set_memory_used(id, w_rank);
+            while (true) {
+                std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
+                if (sub_memory->_use_count[id] == w_size) {
+                    sub_memory->_use_count[id] = 0;
+                    for (int i = 0; i < w_size; i++) {
+                        sub_memory->_memorys_table[id][i].flag = false;
+                    }
+                }
+                if (sub_memory->_use_count[id] == 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    void merge_output(const std::vector<MemoryPtr> outputs) {
+        if (enable_tensor_parallel) {
+            // dst
+            auto dst = outputs[0];
+            auto dst_ptr = static_cast<uint8_t*>(dst->getData());
+
+            auto shape = dst->getShape();
+            auto dims = shape.getDims();
+            auto prec = dst->getPrecision();
+
+            // cur dst
+            auto cur_dst = sub_output_emb;
+
+            auto split_parts = [](int len, int n) {
+                int average = len / n;
+                std::vector<int> parts(n, average);
+                parts.back() = len - average * (n - 1);
+                return parts;
+            };
+
+            const int dim = dims.size() - 1;
+            // selected dim bytes
+            auto channel_size = dims[dim] * prec.size();
+            // total bytes
+            auto mem_size = dst->getSize();
+            // the steps need to copy.
+            const size_t count = (mem_size / channel_size);
+
+            auto splited_dim_vec = split_parts(dims[dim], w_size);
+            const auto strideSize = splited_dim_vec[0] * prec.size();
+
+            sub_memory->_memorys_table[id][w_rank].send_buf = cur_dst->getData();
+            sub_memory->_memorys_table[id][w_rank].flag = true;
+
+            std::vector<int> wait_list(w_size, 1);
+            while (true) {
+                int wait_size = 0;
+                for (int idx = 0; idx < w_size; idx++) {
+                    if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag) {
+                        auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
+                        const auto copySize = splited_dim_vec[idx] * prec.size();    // bytes of half selected dim.
+                        const size_t unloop = 8;
+                        size_t step = count / unloop;
+                        parallel_for(step, [&](size_t i){
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
+                        });
+                        size_t tail = count & ~(unloop - 1);
+                        for (size_t i = tail; i < count; ++i) {
+                            size_t dst_offset = i * channel_size + idx * strideSize;
+                            size_t src_offset = i * copySize;
+                            cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
+                        }
+                        wait_list[idx] = 0;
+                    }
+                    wait_size += wait_list[idx];
+                }
+                if (wait_size == 0) {
+                    break;
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
+                sub_memory->_use_count[id]++;
+            }
+        }
     }
 
     void execute(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr> outputs) override {
@@ -1662,6 +1755,7 @@ struct AttentionExecutor : public PagedAttentionExecutor {
 
         if (enable_tensor_parallel) {
             slice_input_and_output(inputs, outputs);
+            init_sub_memory();
         }
 
         init(inputs, outputs, q, k, v, k_cache, v_cache, past_lens, subsequence_begins, block_indices, block_indices_begins,
@@ -1672,7 +1766,7 @@ struct AttentionExecutor : public PagedAttentionExecutor {
             block_indices_begins, alibi_slopes);
 
         if (enable_tensor_parallel) {
-            merge_output();    
+            merge_output(outputs);
         }
     }
 };

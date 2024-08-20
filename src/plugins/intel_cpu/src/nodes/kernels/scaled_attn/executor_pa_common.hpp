@@ -42,6 +42,7 @@ struct PagedAttentionExecutor {
     std::shared_ptr<ov::intel_cpu::SubMemoryManager> sub_memory = nullptr;
     const int head_axis = 1;
     dnnl::engine eng;
+    std::string node_name = "";
     // Execute Func
     virtual void execute(const std::vector<ov::intel_cpu::MemoryPtr>& inputs, const std::vector<ov::intel_cpu::MemoryPtr> outputs) = 0;
 };

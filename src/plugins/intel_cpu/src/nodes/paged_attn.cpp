@@ -65,8 +65,8 @@ PagedAttention::PagedAttention(const std::shared_ptr<ov::Node>& op, const GraphC
             // init w_rank and w_size
             w_rank = context->getCPUStreamExecutor()->get_rank()[0];
             w_size = ov::threading::message_manager()->get_num_sub_streams();
-            // enable_tensor_parallel = w_size > 1 ? true : false;
-            enable_tensor_parallel = false;
+            enable_tensor_parallel = w_size > 1 ? true : false;
+            // enable_tensor_parallel = false;
         }
     }
     // output score may have no child
@@ -191,6 +191,8 @@ void PagedAttention::execute(dnnl::stream strm) {
     if (m_hasScore)
         outputs[1] = getDstMemoryAtPort(1);
 
+    auto name = getName();
+    m_executor->node_name = name;
     m_executor->execute(inputs, outputs);
 }
 

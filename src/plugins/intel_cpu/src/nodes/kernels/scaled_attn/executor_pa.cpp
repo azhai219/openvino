@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <limits>
 #include <type_traits>
 
@@ -1650,6 +1651,20 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         auto subo0_s = dims2str(sub_output_emb->getStaticDims());
     }
 
+    // dump data to file
+    void dump_memory(MemoryPtr mem) {
+        printf("[pa] node_name : %s\n", node_name.c_str());
+        std::string filename = node_name + "_" + std::to_string(w_rank) + ".txt";
+        auto prec = mem->getPrecision();
+        auto data = static_cast<ov::bfloat16*>(mem->getData());
+        std::ofstream fd(filename, std::ofstream::out | std::ofstream::trunc);
+        fd << node_name << " : " << mem->getShape().toString() << "\n";
+        for (size_t idx = 0; idx < mem->getSize() / prec.size(); ++idx) {
+            fd << data[idx] << "\n";
+        }
+        fd.close();
+    }
+
     void init_sub_memory() {
         if (enable_tensor_parallel) {
             id = sub_memory->get_memory_id(w_rank);
@@ -1669,10 +1684,10 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         }
     }
 
-    void merge_output(const std::vector<MemoryPtr> outputs) {
+    void concat_memory(MemoryPtr dst, MemoryPtr cur_dst, const size_t dim) {
         if (enable_tensor_parallel) {
             // dst
-            auto dst = outputs[0];
+            // auto dst = outputs[0];
             auto dst_ptr = static_cast<uint8_t*>(dst->getData());
 
             auto shape = dst->getShape();
@@ -1689,16 +1704,32 @@ struct AttentionExecutor : public PagedAttentionExecutor {
                 return parts;
             };
 
-            const int dim = dims.size() - 1;
-            // selected dim bytes
-            auto channel_size = dims[dim] * prec.size();
+            // const int dim = dims.size() - 1;
             // total bytes
-            auto mem_size = dst->getSize();
+            // auto mem_size = dst->getSize();
             // the steps need to copy.
-            const size_t count = (mem_size / channel_size);
+            // const size_t count = (mem_size / channel_size);
+            size_t count = 1;
+            for (size_t idx=0; idx < dim; ++idx) {
+                if (dims[idx] == 0) {
+                    continue;
+                }
+                count *= dims[idx];
+            }
+
+            size_t lastsize = 1;
+            for (size_t idx=dim+1; idx < dims.size(); ++idx) {
+                if (dims[idx] == 0) {
+                    continue;
+                }
+                lastsize *= dims[idx];
+            }
+
+            // selected dim bytes
+            auto channel_size = dims[dim] * lastsize * prec.size();
 
             auto splited_dim_vec = split_parts(dims[dim], w_size);
-            const auto strideSize = splited_dim_vec[0] * prec.size();
+            const auto strideSize = splited_dim_vec[0] * lastsize * prec.size();
 
             sub_memory->_memorys_table[id][w_rank].send_buf = cur_dst->getData();
             sub_memory->_memorys_table[id][w_rank].flag = true;
@@ -1709,21 +1740,22 @@ struct AttentionExecutor : public PagedAttentionExecutor {
                 for (int idx = 0; idx < w_size; idx++) {
                     if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag) {
                         auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
-                        const auto copySize = splited_dim_vec[idx] * prec.size();    // bytes of half selected dim.
-                        const size_t unloop = 8;
-                        size_t step = count / unloop;
-                        parallel_for(step, [&](size_t i){
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
-                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
-                        });
-                        size_t tail = count & ~(unloop - 1);
-                        for (size_t i = tail; i < count; ++i) {
+                        const auto copySize = splited_dim_vec[idx] * lastsize * prec.size();    // bytes of half selected dim.
+                        // const size_t unloop = 8;
+                        // size_t step = count / unloop;
+                        // parallel_for(step, [&](size_t i){
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
+                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
+                        // });
+                        // size_t tail = count & ~(unloop - 1);
+                        // for (size_t i = tail; i < count; ++i) {
+                        for (size_t i = 0; i < count; ++i) {
                             size_t dst_offset = i * channel_size + idx * strideSize;
                             size_t src_offset = i * copySize;
                             cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
@@ -1766,7 +1798,12 @@ struct AttentionExecutor : public PagedAttentionExecutor {
             block_indices_begins, alibi_slopes);
 
         if (enable_tensor_parallel) {
-            merge_output(outputs);
+            auto output_concat_dim = outputs[0]->getShape().getRank() - 1;
+            // concat_memory(outputs[0], sub_output_emb, output_concat_dim);
+            // concat kv_cache
+            const int cache_concat_dim = 1;
+            concat_memory(inputs[ID_KCACHE], sub_k_cache, cache_concat_dim);
+            concat_memory(inputs[ID_VCACHE], sub_v_cache, cache_concat_dim);
         }
     }
 };

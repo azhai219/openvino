@@ -228,6 +228,7 @@ void FullyConnected::execute(dnnl::stream strm) {
     executor->execute(memory);
 
     execTensorParallelSync();
+    execTensorParallelSync();
 }
 
 void FullyConnected::executeDynamicImpl(dnnl::stream strm) {

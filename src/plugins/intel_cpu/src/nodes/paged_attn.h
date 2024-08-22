@@ -50,6 +50,14 @@ private:
     int w_rank = -1;
     int w_size = -1;
     bool enable_tensor_parallel = false;
+    int infer_num = -1;
+    MemoryPtr sub_q = nullptr;
+    MemoryPtr sub_k = nullptr;
+    MemoryPtr sub_v = nullptr;
+    MemoryPtr sub_k_cache = nullptr;
+    MemoryPtr sub_v_cache = nullptr;
+    MemoryPtr sub_output_emb = nullptr;
+    MemoryPtr sub_output_score = nullptr;
 };
 
 }  // namespace node

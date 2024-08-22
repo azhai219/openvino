@@ -65,8 +65,14 @@ PagedAttention::PagedAttention(const std::shared_ptr<ov::Node>& op, const GraphC
             // init w_rank and w_size
             w_rank = context->getCPUStreamExecutor()->get_rank()[0];
             w_size = ov::threading::message_manager()->get_num_sub_streams();
-            enable_tensor_parallel = w_size > 1 ? true : false;
+            // enable_tensor_parallel = w_size > 1 ? true : false;
             // enable_tensor_parallel = false;
+            const char* tp = std::getenv("ENABLE_TP");
+            if (tp) {
+                enable_tensor_parallel = w_size > 1 ? true : false;
+            } else {
+                enable_tensor_parallel = false;
+            }
         }
     }
     // output score may have no child
@@ -193,6 +199,9 @@ void PagedAttention::execute(dnnl::stream strm) {
 
     auto name = getName();
     m_executor->node_name = name;
+    infer_num++;
+    // printf("[debug pa] w_rank=%d, infer_num=%d\n", w_rank, infer_num);
+    m_executor->infer_num = infer_num;
     m_executor->execute(inputs, outputs);
 }
 

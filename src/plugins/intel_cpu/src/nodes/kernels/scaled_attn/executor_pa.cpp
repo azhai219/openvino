@@ -1494,27 +1494,27 @@ struct AttentionExecutor : public PagedAttentionExecutor {
             int q_stop = 0;
             int o0_start = 0;
             int o0_stop = 0;
-        if (enable_tensor_parallel) {
+        if (pa_cfg.enable_tensor_parallel) {
             auto split_parts = [](size_t len, size_t n) {
                 int average = len / n;
                 std::vector<size_t> parts(n, average);
                 parts.back() = len - average * (n - 1);
                 return parts;
             };
-            auto slice_vec = split_parts(inputs[ID_KCACHE]->getStaticDims()[head_axis], w_size);
-            kv_start = w_rank * slice_vec[0];
-            kv_stop = w_rank * slice_vec[0] + slice_vec[w_rank];
+            auto slice_vec = split_parts(inputs[ID_KCACHE]->getStaticDims()[pa_cfg.head_axis], pa_cfg.w_size);
+            kv_start = pa_cfg.w_rank * slice_vec[0];
+            kv_stop = pa_cfg.w_rank * slice_vec[0] + slice_vec[pa_cfg.w_rank];
 
-            auto q_slice_vec = split_parts(inputs[ID_Q]->getStaticDims().back(), w_size);
-            q_start = w_rank * q_slice_vec[0];
-            q_stop = w_rank * q_slice_vec[0] + q_slice_vec[w_rank];
+            auto q_slice_vec = split_parts(inputs[ID_Q]->getStaticDims().back(), pa_cfg.w_size);
+            q_start = pa_cfg.w_rank * q_slice_vec[0];
+            q_stop = pa_cfg.w_rank * q_slice_vec[0] + q_slice_vec[pa_cfg.w_rank];
 
-            auto o0_slice_vec = split_parts(outputs[0]->getStaticDims().back(), w_size);
-            o0_start = w_rank * o0_slice_vec[0];
-            o0_stop = w_rank * o0_slice_vec[0] + o0_slice_vec[w_rank];
+            auto o0_slice_vec = split_parts(outputs[0]->getStaticDims().back(), pa_cfg.w_size);
+            o0_start = pa_cfg.w_rank * o0_slice_vec[0];
+            o0_stop = pa_cfg.w_rank * o0_slice_vec[0] + o0_slice_vec[pa_cfg.w_rank];
 
-            // auto subq_s = dims2str(sub_q.shape());
-            // sub_q = q.slice(head_axis, q_start, q_stop);
+            // auto subq_s = dims2str(pa_cfg.sub_q.shape());
+            // pa_cfg.sub_q = q.slice(pa_cfg.head_axis, q_start, q_stop);
         }
     }
 
@@ -1579,13 +1579,13 @@ struct AttentionExecutor : public PagedAttentionExecutor {
                      float& scale, size_t& sliding_window, PlainTensor& alibi_slopes, size_t& max_context_len,
                      PlainTensor& output_emb,
                      pa_shape& ps) {
-        if (enable_tensor_parallel) {
-            q.reset(sub_q);
+        if (pa_cfg.enable_tensor_parallel) {
+            q.reset(pa_cfg.sub_q);
             // k.reset(sub_k);
             // v.reset(sub_v);
-            k_cache.reset(sub_k_cache);
-            v_cache.reset(sub_v_cache);
-            output_emb.reset(sub_output_emb);
+            k_cache.reset(pa_cfg.sub_k_cache);
+            v_cache.reset(pa_cfg.sub_v_cache);
+            output_emb.reset(pa_cfg.sub_output_emb);
             ps.Hk = k_cache.size(1);
             ps.S = v_cache.size(3) - (k_cache.m_dt == ov::element::Type_t::u8 ? sizeof(float) * 2 : 0);
             ps.block_size = k_cache.size(2);
@@ -1650,26 +1650,26 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     }
 
     void slice_input_and_output(const std::vector<MemoryPtr>& inputs, const std::vector<MemoryPtr> outputs) {
-        if (enable_tensor_parallel) {
+        if (pa_cfg.enable_tensor_parallel) {
             // input
             // q, k, v
-            sub_q = split_memory(eng, inputs[ID_Q], head_axis, w_rank, w_size);
+            pa_cfg.sub_q = split_memory(pa_cfg.eng, inputs[ID_Q], pa_cfg.head_axis, pa_cfg.w_rank, pa_cfg.w_size);
             // kv cache
-            sub_k_cache = split_memory(eng, inputs[ID_KCACHE], head_axis, w_rank, w_size);
-            sub_v_cache = split_memory(eng, inputs[ID_VCACHE], head_axis, w_rank, w_size);
+            pa_cfg.sub_k_cache = split_memory(pa_cfg.eng, inputs[ID_KCACHE], pa_cfg.head_axis, pa_cfg.w_rank, pa_cfg.w_size);
+            pa_cfg.sub_v_cache = split_memory(pa_cfg.eng, inputs[ID_VCACHE], pa_cfg.head_axis, pa_cfg.w_rank, pa_cfg.w_size);
             // auto kc_s = dims2str(inputs[ID_KCACHE]->getStaticDims());
-            // auto subkc_s = dims2str(sub_k_cache->getStaticDims());
+            // auto subkc_s = dims2str(pa_cfg.sub_k_cache->getStaticDims());
             // output
-            sub_output_emb = split_memory(eng, outputs[0], head_axis, w_rank, w_size);
+            pa_cfg.sub_output_emb = split_memory(pa_cfg.eng, outputs[0], pa_cfg.head_axis, pa_cfg.w_rank, pa_cfg.w_size);
             // auto o0_s = dims2str(outputs[0]->getStaticDims());
-            // auto subo0_s = dims2str(sub_output_emb->getStaticDims());
+            // auto subo0_s = dims2str(pa_cfg.sub_output_emb->getStaticDims());
         }
     }
 
     // dump data to file
     void dump_memory(MemoryPtr mem, std::string ext) {
-        printf("[pa] node_name : %s\n", node_name.c_str());
-        std::string filename = node_name + "_port_" + ext + "_" + std::to_string(infer_num) + "#" + std::to_string(w_rank) + ".txt";
+        printf("[pa] pa_cfg.node_name : %s\n", pa_cfg.node_name.c_str());
+        std::string filename = pa_cfg.node_name + "_port_" + ext + "_" + std::to_string(pa_cfg.infer_num) + "#" + std::to_string(pa_cfg.w_rank) + ".txt";
         const char* dir_name = std::getenv("DUMP_DIR");
         if (dir_name) {
             filename = std::string(dir_name) + "/" + filename;
@@ -1680,7 +1680,7 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         auto prec = mem->getPrecision();
         auto data = static_cast<ov::bfloat16*>(mem->getData());
         std::ofstream fd(filename, std::ofstream::out | std::ofstream::trunc);
-        fd << node_name << " : " << mem->getShape().toString() << "\n";
+        fd << pa_cfg.node_name << " : " << mem->getShape().toString() << "\n";
         double sum = 0;
         for (size_t idx = 0; idx < mem->getSize() / prec.size(); ++idx) {
             sum += static_cast<float>(data[idx]);
@@ -1691,18 +1691,18 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     }
 
     void init_sub_memory() {
-        if (enable_tensor_parallel) {
-            id = sub_memory->get_memory_id(w_rank);
-            sub_memory->set_memory_used(id, w_rank);
+        if (pa_cfg.enable_tensor_parallel) {
+            pa_cfg.id = pa_cfg.sub_memory->get_memory_id(pa_cfg.w_rank);
+            pa_cfg.sub_memory->set_memory_used(pa_cfg.id, pa_cfg.w_rank);
             while (true) {
-                std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
-                if (sub_memory->_use_count[id] == w_size) {
-                    sub_memory->_use_count[id] = 0;
-                    for (int i = 0; i < w_size; i++) {
-                        sub_memory->_memorys_table[id][i].flag = false;
+                std::lock_guard<std::mutex> lock(pa_cfg.sub_memory->_flagMutex);
+                if (pa_cfg.sub_memory->_use_count[pa_cfg.id] == pa_cfg.w_size) {
+                    pa_cfg.sub_memory->_use_count[pa_cfg.id] = 0;
+                    for (int i = 0; i < pa_cfg.w_size; i++) {
+                        pa_cfg.sub_memory->_memorys_table[pa_cfg.id][i].flag = false;
                     }
                 }
-                if (sub_memory->_use_count[id] == 0) {
+                if (pa_cfg.sub_memory->_use_count[pa_cfg.id] == 0) {
                     break;
                 }
             }
@@ -1710,9 +1710,8 @@ struct AttentionExecutor : public PagedAttentionExecutor {
     }
 
     void concat_memory(MemoryPtr dst, MemoryPtr cur_dst, const size_t dim) {
-        if (enable_tensor_parallel) {
+        if (pa_cfg.enable_tensor_parallel) {
             // dst
-            // auto dst = outputs[0];
             auto dst_ptr = static_cast<uint8_t*>(dst->getData());
 
             auto shape = dst->getShape();
@@ -1720,7 +1719,7 @@ struct AttentionExecutor : public PagedAttentionExecutor {
             auto prec = dst->getPrecision();
 
             // cur dst
-            auto cur_dst = sub_output_emb;
+            auto cur_dst = pa_cfg.sub_output_emb;
 
             auto split_parts = [](int len, int n) {
                 int average = len / n;
@@ -1748,34 +1747,34 @@ struct AttentionExecutor : public PagedAttentionExecutor {
             // selected dim bytes
             auto channel_size = dims[dim] * lastsize * prec.size();
 
-            auto splited_dim_vec = split_parts(dims[dim], w_size);
+            auto splited_dim_vec = split_parts(dims[dim], pa_cfg.w_size);
             const auto strideSize = splited_dim_vec[0] * lastsize * prec.size();
 
-            sub_memory->_memorys_table[id][w_rank].send_buf = cur_dst->getData();
-            sub_memory->_memorys_table[id][w_rank].flag = true;
+            pa_cfg.sub_memory->_memorys_table[pa_cfg.id][pa_cfg.w_rank].send_buf = cur_dst->getData();
+            pa_cfg.sub_memory->_memorys_table[pa_cfg.id][pa_cfg.w_rank].flag = true;
 
-            std::vector<int> wait_list(w_size, 1);
+            std::vector<int> wait_list(pa_cfg.w_size, 1);
             while (true) {
                 int wait_size = 0;
-                for (int idx = 0; idx < w_size; idx++) {
-                    if (wait_list[idx] > 0 && sub_memory->_memorys_table[id][idx].flag) {
-                        auto new_ptr = static_cast<uint8_t*>(sub_memory->_memorys_table[id][idx].send_buf);
+                for (int idx = 0; idx < pa_cfg.w_size; idx++) {
+                    if (wait_list[idx] > 0 && pa_cfg.sub_memory->_memorys_table[pa_cfg.id][idx].flag) {
+                        auto new_ptr = static_cast<uint8_t*>(pa_cfg.sub_memory->_memorys_table[pa_cfg.id][idx].send_buf);
                         const auto copySize = splited_dim_vec[idx] * lastsize * prec.size();    // bytes of half selected dim.
-                        // const size_t unloop = 8;
-                        // size_t step = count / unloop;
-                        // parallel_for(step, [&](size_t i){
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
-                        //     cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
-                        // });
-                        // size_t tail = count & ~(unloop - 1);
-                        // for (size_t i = tail; i < count; ++i) {
-                        for (size_t i = 0; i < count; ++i) {
+                        const size_t unloop = 8;
+                        size_t step = count / unloop;
+                        parallel_for(step, [&](size_t i){
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop) * channel_size, new_ptr + (i * unloop) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 1) * channel_size, new_ptr + (i * unloop + 1) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 2) * channel_size, new_ptr + (i * unloop + 2) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 3) * channel_size, new_ptr + (i * unloop + 3) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 4) * channel_size, new_ptr + (i * unloop + 4) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 5) * channel_size, new_ptr + (i * unloop + 5) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 6) * channel_size, new_ptr + (i * unloop + 6) * copySize, copySize);
+                            cpu_memcpy(dst_ptr + idx * strideSize + (i * unloop + 7) * channel_size, new_ptr + (i * unloop + 7) * copySize, copySize);
+                        });
+                        size_t tail = count & ~(unloop - 1);
+                        for (size_t i = tail; i < count; ++i) {
+                        // for (size_t i = 0; i < count; ++i) {
                             size_t dst_offset = i * channel_size + idx * strideSize;
                             size_t src_offset = i * copySize;
                             cpu_parallel_memcpy(dst_ptr + dst_offset, new_ptr + src_offset, copySize);
@@ -1789,8 +1788,8 @@ struct AttentionExecutor : public PagedAttentionExecutor {
                 }
             }
             {
-                std::lock_guard<std::mutex> lock(sub_memory->_flagMutex);
-                sub_memory->_use_count[id]++;
+                std::lock_guard<std::mutex> lock(pa_cfg.sub_memory->_flagMutex);
+                pa_cfg.sub_memory->_use_count[pa_cfg.id]++;
             }
         }
     }
@@ -1822,7 +1821,7 @@ struct AttentionExecutor : public PagedAttentionExecutor {
         _kernel(q, k_cache, v_cache, output_emb, output_score, max_context_len, past_lens, subsequence_begins, block_indices,
                 block_indices_begins, alibi_slopes);
 
-        concat_memory(outputs[0], sub_output_emb, outputs[0]->getShape().getRank() - 1);
+        concat_memory(outputs[0], pa_cfg.sub_output_emb, outputs[0]->getShape().getRank() - 1);
     }
 };
 #endif

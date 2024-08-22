@@ -70,8 +70,10 @@ PagedAttention::PagedAttention(const std::shared_ptr<ov::Node>& op, const GraphC
             const char* tp = std::getenv("ENABLE_TP");
             if (tp) {
                 enable_tensor_parallel = w_size > 1 ? true : false;
+                printf("[debug pa] tp is ON!\n");
             } else {
                 enable_tensor_parallel = false;
+                printf("[debug pa] tp is OFF!\n");
             }
         }
     }
@@ -163,11 +165,11 @@ void PagedAttention::createPrimitive() {
     }
     m_executor = result.first;
     // set tensor parallel config
-    m_executor->w_rank = w_rank;
-    m_executor->w_size = w_size;
-    m_executor->enable_tensor_parallel = enable_tensor_parallel;
-    m_executor->sub_memory = context->getSubMemory();
-    m_executor->eng = context->getEngine();
+    m_executor->pa_cfg.w_rank = w_rank;
+    m_executor->pa_cfg.w_size = w_size;
+    m_executor->pa_cfg.enable_tensor_parallel = enable_tensor_parallel;
+    m_executor->pa_cfg.sub_memory = context->getSubMemory();
+    m_executor->pa_cfg.eng = context->getEngine();
 }
 
 void PagedAttention::execute(dnnl::stream strm) {
@@ -198,10 +200,10 @@ void PagedAttention::execute(dnnl::stream strm) {
         outputs[1] = getDstMemoryAtPort(1);
 
     auto name = getName();
-    m_executor->node_name = name;
+    m_executor->pa_cfg.node_name = name;
     infer_num++;
     // printf("[debug pa] w_rank=%d, infer_num=%d\n", w_rank, infer_num);
-    m_executor->infer_num = infer_num;
+    m_executor->pa_cfg.infer_num = infer_num;
     m_executor->execute(inputs, outputs);
 }
 

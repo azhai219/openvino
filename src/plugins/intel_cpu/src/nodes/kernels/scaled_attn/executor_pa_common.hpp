@@ -25,13 +25,14 @@ struct PATensorParallelConfig {
     std::shared_ptr<ov::intel_cpu::SubMemoryManager> sub_memory = nullptr;
     const int head_axis = 1;
     dnnl::engine eng;
-    std::string node_name = "";
-    int infer_num = -1;
     ov::intel_cpu::MemoryPtr sub_q = nullptr;
     ov::intel_cpu::MemoryPtr sub_k_cache = nullptr;
     ov::intel_cpu::MemoryPtr sub_v_cache = nullptr;
     ov::intel_cpu::MemoryPtr sub_output_emb = nullptr;
     ov::intel_cpu::MemoryPtr sub_output_score = nullptr;
+    // for debug info
+    std::string node_name = "";
+    int infer_num = -1;
 };
 // this file will contain features that do not require multiple instantiation
 
@@ -52,20 +53,6 @@ struct PagedAttentionExecutor {
     static const size_t ID_MAX_CONTEXT_LEN = 12;            // []
     // Tensor Parallel params
     PATensorParallelConfig pa_cfg;
-    int w_rank = -1;
-    int w_size = -1;
-    int id = 0;
-    bool enable_tensor_parallel = false;
-    std::shared_ptr<ov::intel_cpu::SubMemoryManager> sub_memory = nullptr;
-    const int head_axis = 1;
-    dnnl::engine eng;
-    std::string node_name = "";
-    int infer_num = -1;
-    ov::intel_cpu::MemoryPtr sub_q = nullptr;
-    ov::intel_cpu::MemoryPtr sub_k_cache = nullptr;
-    ov::intel_cpu::MemoryPtr sub_v_cache = nullptr;
-    ov::intel_cpu::MemoryPtr sub_output_emb = nullptr;
-    ov::intel_cpu::MemoryPtr sub_output_score = nullptr;
     // Execute Func
     virtual void execute(const std::vector<ov::intel_cpu::MemoryPtr>& inputs, const std::vector<ov::intel_cpu::MemoryPtr> outputs) = 0;
 };

@@ -623,7 +623,7 @@ inline void multiply_scalar(float* a, T* a_dst, const float val, const size_t si
         __mmask16 mask = (1 << (size - i)) - 1;
         v_a = _mm512_maskz_loadu_ps(mask, a + i);
         v_a = _mm512_mul_ps(v_a, v_scale);
-        mm512_uni_storeu_tail_ps(a_dst + i, v_a, size - 1);
+        mm512_uni_storeu_tail_ps(a_dst + i, v_a, size - i);
 
         i += (size - i);
     }
@@ -640,7 +640,7 @@ inline void multiply_scalar(float* a, T* a_dst, const float val, const size_t si
         auto mask = get_mask(size - i);
         v_a = _mm256_maskload_ps(a + i, mask);
         v_a = _mm256_mul_ps(v_a, v_scale);
-        mm256_uni_storeu_tail_ps(a_dst + i, v_a, size - 1);
+        mm256_uni_storeu_tail_ps(a_dst + i, v_a, size - i);
 
         i += (size - i);
     }

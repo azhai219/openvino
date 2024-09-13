@@ -40,6 +40,7 @@
 #include "utils/node_dumper.h"
 #include "utils/verbose.h"
 #include "utils/precision_support.h"
+#include "utils/linux_perf.hpp"
 
 #include <oneapi/dnnl/dnnl.hpp>
 #include "common/primitive_desc_iface.hpp"
@@ -1349,6 +1350,7 @@ inline void Graph::ExecuteNode(const NodePtr& node, SyncInferRequest* request, i
 inline void Graph::ExecuteNodeWithCatch(const NodePtr& node, SyncInferRequest* request, int numaId) const {
     VERBOSE_PERF_DUMP_ITT_DEBUG_LOG(itt::domains::intel_cpu, node, getConfig());
 
+    auto prof = LinuxPerf::Profile(node->getTypeStr());
     try {
         ExecuteNode(node, request, numaId);
     } catch (const std::exception& exp) {
@@ -1383,6 +1385,7 @@ static int GetNumaNodeId(const GraphContext::CPtr& context) {
 
 void Graph::Infer(SyncInferRequest* request) {
     DEBUG_LOG("Infer graph: ", GetName(), ". Status: ", static_cast<int>(status));
+    auto prof = LinuxPerf::Profile("Graph::Infer", infer_count);
     const int numaId = GetNumaNodeId(context);
 
     switch (status) {

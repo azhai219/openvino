@@ -27,7 +27,7 @@
 #     include "kernels/acl/gemm_kernel.hpp"
 #endif
 
-#include "utils/plain_tensor.hpp"
+#include "utils/linux_perf.hpp"
 #include "kernels/scaled_attn/softmax.hpp"
 #include "kernels/scaled_attn/mha_single_token.hpp"
 #include "kernels/scaled_attn/attn_memcpy.hpp"
@@ -405,16 +405,16 @@ struct MHAKernel<ScaledDotProductAttention::KT_ONEDNN, T> {
                 auto ncausal = auto_causal ? (kv_len - q_len + m + 1) : kv_len;
                 auto score = weight_score.ptr<float>(ithr, h, m - m_start);
                 attn_softmax(score,
-                            reinterpret_cast<T*>(score),
-                            d_scale,
-                            alibi_ptr + m * alibi_stride,
-                            attn_mask_ptr + m * attn_mask_stride,
-                            cmask_ptr + m * cmask_stride,
-                            select_nfltmax_at_0,
-                            ncausal,
-                            kv_len,
-                            precision_of<T>::value,
-                            precision_of<T>::value);
+                             reinterpret_cast<T*>(score),
+                             d_scale,
+                             alibi_ptr + m * alibi_stride,
+                             attn_mask_ptr + m * attn_mask_stride,
+                             cmask_ptr + m * cmask_stride,
+                             select_nfltmax_at_0,
+                             ncausal,
+                             kv_len,
+                             precision_of<T>::value,
+                             precision_of<T>::value);
             }
             auto* w_ptr = reinterpret_cast<T*>(weight_score.ptr<float>(ithr, h, 0, 0));
             float* fp32_out_ptr;
@@ -1127,6 +1127,7 @@ void ScaledDotProductAttention::execute(dnnl::stream strm) {
         presentk_input = inputs[1];
         presentv_input = inputs[2];
     }
+    auto prof = LinuxPerf::Profile("sdpa");
     m_executor->execute(strm, m_config, inputs, output, presentk_input, presentv_input, beam_input, k_scale_zp, v_scale_zp);
 }
 

@@ -827,7 +827,8 @@ void Transformations::PostLpt() {
 
     // MLP & QKV fusion optimizations is focused on throughput, only enabled on AMX-bf16 & LLM serving use cases.
     auto can_use_amx_bf16 = dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core_amx) && (inferencePrecision == element::bf16);
-    if (can_use_amx_bf16) {
+    // if (can_use_amx_bf16) {
+    if (false) {
         CPU_REGISTER_PASS_X64(postLPTPassManager, MLPFusion);
         CPU_SET_CALLBACK_X64(postLPTPassManager,
             [](const_node_ptr &node) -> bool {
@@ -849,6 +850,9 @@ void Transformations::PostLpt() {
     }
 
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::transpose_sinking::TSShapeOfForward);
+
+    // std::string model_name = inferencePrecision.get_type_name() + std::string("_model.xml");
+    // CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::Serialize, model_name, "");
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, StatefulSDPAFusion);
     CPU_REGISTER_PASS_X64(postLPTPassManager, ov::pass::RMSFusion, false);
     CPU_REGISTER_PASS_X64(postLPTPassManager, ov::intel_cpu::DecomposeRMSNorm);

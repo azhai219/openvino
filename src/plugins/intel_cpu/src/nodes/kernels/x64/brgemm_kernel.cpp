@@ -67,6 +67,9 @@ BrgemmKernel::BrgemmKernel(size_t M,
     */
     bool isAMXSupported = is_bf16 && mayiuse(avx512_core_amx);
     bool isBrgWithAMX = isAMXSupported && !is_f32;
+    if (std::getenv("disable_amx_bf16")) {
+       isBrgWithAMX = false;
+    }
 
     size_t vlen;
     if (mayiuse(avx512_core))
@@ -437,6 +440,7 @@ void BrgemmKernel::callBrgemm(brgemmCtx& ctx,
                               const void* pin1,
                               void* pout,
                               void* wsp) {
+
     if (ctx.is_with_amx)
         amx_tile_configure(ctx.palette);
     if (ctx.is_with_comp) {

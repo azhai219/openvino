@@ -191,8 +191,10 @@ StatefulSDPAFusion::StatefulSDPAFusion() {
             for (auto&& node : nodes) {
                 if (pattern_map.count(node)) {
                     auto p = pattern_map.at(node).get_node_shared_ptr();
-                    if (p->get_output_target_inputs(0).size() != 1)
+                    // std::cout << p->get_type_name() << " : " << p->get_friendly_name() << "\n";
+                    if (p->get_output_target_inputs(0).size() != 1) {
                         return false;
+                    }
                 }
             }
             return true;

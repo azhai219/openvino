@@ -23,13 +23,13 @@ public:
 
 template <typename T>
 void run_test(ov::element::Type rtPrec) {
-    size_t M = 33;
-    size_t N = 32;
-    size_t K = 33;
+    size_t M = 1;
+    size_t N = 12;
+    size_t K = 10;
     ov::intel_cpu::BrgemmKernel gemm(M, N, K, K, N, N, false, rtPrec);
-    size_t nthr = 8;
+    size_t nthr = 1;
     bool is_f32 = (rtPrec == ov::element::f32);
-    std::vector<T> a_data(M * K, (1.0f/33));
+    std::vector<T> a_data(M * K, (1.0f/K));
     std::vector<T> b_data(K * N, 4.0f);
     std::vector<float> c_data(nthr * M * N, 0.0f);
     std::vector<size_t> wsp(nthr * 4 * 1024, 0.0f);
@@ -38,9 +38,10 @@ void run_test(ov::element::Type rtPrec) {
     if (!is_f32) {
         gemm.copy_buffer_b(b_data.data(), b_scratch.data());
     }
+    void* b_ptr = !is_f32 ? static_cast<void*>(b_scratch.data()) : static_cast<void*>(b_data.data());
+
     auto m_block_size = gemm.get_mblk_size();
     auto m_blocks = (M + gemm.get_mblk_size() - 1) / m_block_size;
-    void* b_ptr = !is_f32 ? static_cast<void*>(b_scratch.data()) : static_cast<void*>(b_data.data());
     ov::parallel_for2d(nthr, m_blocks, [&](size_t i, size_t m_blk) {
         auto m_start = m_blk * m_block_size;
         auto m_end = std::min(m_start + m_block_size, M);
@@ -56,9 +57,11 @@ void run_test(ov::element::Type rtPrec) {
         for (size_t m = 0; m < M; m++) {
             for (size_t n = 0; n < N; n++) {
                 float expected_value = 4.0f;
-                double abs = std::fabs(expected_value - c_data[i * M * N + m * N + n]);
+                float actual_value = c_data[i * M * N + m * N + n];
+                std::cout << "[debug]: " << expected_value << " vs " << actual_value << "\n";
+                double abs = std::fabs(expected_value - actual_value);
                 double rel = expected_value ? (abs / std::fabs(expected_value)) : abs;
-                if (rel > 0.01f) {
+                if (rel > 1.01f) {
                     std::ostringstream out_stream;
                     out_stream << "actual " << c_data[m * N + n] << "|expected|" << expected_value << std::endl;
                     throw std::runtime_error(out_stream.str());

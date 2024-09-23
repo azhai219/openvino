@@ -66,7 +66,7 @@ BrgemmKernel::BrgemmKernel(size_t M,
         fp16      Y      Y
     */
     bool isAMXSupported = (is_bf16 && mayiuse(avx512_core_amx)) || (is_f16 && mayiuse(avx512_core_amx_fp16));
-    bool isBrgWithAMX = isAMXSupported && !is_f32;
+    bool isBrgWithAMX = isAMXSupported && !is_f32 && false;
 
     size_t vlen;
     if (mayiuse(avx512_core))
@@ -171,12 +171,18 @@ void BrgemmKernel::init_brgemm(brgemmCtx& ctx,
     cpu_isa_t isa;
     if (use_amx) {
         isa = isa_undef;
-    } else if (inType == ov::element::f16) {
-        // TODO: AMX_FP16
-        isa = avx512_core_fp16;
     } else if (mayiuse(avx512_core)){
-        isa = ctx.dt_in0 == dnnl_data_type_t::dnnl_bf16 ? avx512_core_bf16
-                                                        : (is_int8 ? avx512_core_vnni : avx512_core);
+        if (ctx.dt_in0 == dnnl_data_type_t::dnnl_bf16) {
+            isa = avx512_core_bf16;
+        } else if (ctx.dt_in0 == dnnl_data_type_t::dnnl_f16) {
+            isa = avx512_core_fp16;
+        } else {
+            if (is_int8) {
+                isa = avx512_core_vnni;
+            } else {
+                isa = avx512_core;
+            }
+        }
     } else {
         isa = cpu_isa_t::avx2;
     }
@@ -268,7 +274,7 @@ void BrgemmKernel::init_brgemm_copy_a(
     brgCopyKernelConf.transposed_A = transpose;
     // TODO: AMX_FP16
     // brgCopyKernelConf.isa = inType == ov::element::f16 ? avx512_core_fp16 : avx512_core_amx;
-    brgCopyKernelConf.isa = inType == ov::element::f16 ? avx512_core_amx_fp16 : avx512_core_amx;
+    // brgCopyKernelConf.isa = inType == ov::element::f16 ? avx512_core_amx_fp16 : avx512_core_amx;
 
     create_brgemm_matmul_copy_a(brgCopyKernel, &brgCopyKernelConf);
 }

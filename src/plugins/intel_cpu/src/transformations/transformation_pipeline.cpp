@@ -408,12 +408,15 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
         type_to_fuse_map fuse_map = {{ov::op::PagedAttentionExtension::get_type_info_static(), fuse_type_to_pa}};
 #endif
         const bool keep_precision_sensitive_in_fp32 = true;
+        const bool need_convert_input_output_precision = false;
+        const bool save_original_precision_attribute = true;
         CPU_REGISTER_PASS_COMMON(manager,
                                  ov::pass::ConvertPrecision,
                                  fp_convert_precision_map,
                                  fuse_map,
                                  keep_precision_sensitive_in_fp32,
-                                 false);
+                                 need_convert_input_output_precision,
+                                 save_original_precision_attribute);
     }
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::KeepConstAndDecompression);
     CPU_SET_CALLBACK_COMMON(manager,

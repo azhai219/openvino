@@ -40,6 +40,7 @@
 #include "utils/node_dumper.h"
 #include "utils/verbose.h"
 #include "utils/precision_support.h"
+#include "utils/linux_perf.hpp"
 
 #include <oneapi/dnnl/dnnl.hpp>
 #include "common/primitive_desc_iface.hpp"
@@ -1374,6 +1375,7 @@ void Graph::InferDynamic(SyncInferRequest* request, int numaId, UpdateStrategy&&
 
         for (; inferCounter < stopIndx; ++inferCounter) {
             auto& node = m_executableGraphNodes[inferCounter];
+            auto prof = LinuxPerf::Profile(node->getTypeStr());
 
             ExecuteNodeWithCatch(node, request, numaId);
         }
@@ -1394,6 +1396,7 @@ static int GetNumaNodeId(const GraphContext::CPtr& context) {
 void Graph::Infer(SyncInferRequest* request) {
     DEBUG_LOG("Infer graph: ", GetName(), ". Status: ", static_cast<int>(status));
     const int numaId = GetNumaNodeId(m_context);
+    auto prof = LinuxPerf::Profile("Graph::Infer");
 
     if (!m_pMemoryControl) {
         OPENVINO_THROW("Memory control unit is not initilized in graph: ", GetName());

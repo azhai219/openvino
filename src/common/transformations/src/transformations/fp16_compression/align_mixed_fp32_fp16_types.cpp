@@ -34,6 +34,7 @@ bool ov::pass::AlignMixedFP32FP16Types::run_on_model(const std::shared_ptr<ov::M
             for (const auto& input : node->inputs()) {
                 const auto& incoming_output = input.get_source_output();
                 const auto& incoming_node = incoming_output.get_node_shared_ptr();
+                const auto& node_name = incoming_node->get_friendly_name();
 
                 if (fp16_compression_is_disabled(incoming_node))
                     continue;  // we are in the middle

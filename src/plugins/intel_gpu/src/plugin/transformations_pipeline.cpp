@@ -711,6 +711,7 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
                 return ov::pass::low_precision::NetworkHelper::areQuantizeAndDequantizeSupportedForMultiply(node, defaultPrecisions);
             });
         }
+        manager.register_pass<ov::pass::Serialize>("gpu_p1.xml", "");
 
         manager.run_passes(func);
     }
@@ -892,6 +893,7 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             ov::op::v1::Broadcast::get_type_info_static(),
             ov::op::v3::Broadcast::get_type_info_static(),
         };
+        manager.register_pass<ov::pass::Serialize>("gpu_p2.xml", "");
         manager.register_pass<ov::pass::MoveEltwiseUpThroughDataMovScalar>(allowed_data_movement_ops);
         // FIXME (151111): this Validate is added as a workaround for resolving element
         // types after MoveEltwiseUpThroughDataMovScalar. It has to be removed
@@ -999,6 +1001,7 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
         GPU_DEBUG_IF(cldnn::debug_configuration::get_instance()->verbose >= 1) {
             manager.register_pass<ov::intel_gpu::PrintModelStatistics>();
         }
+        manager.register_pass<ov::pass::Serialize>("gpu_p3.xml", "");
 
         manager.run_passes(func);
     }

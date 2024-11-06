@@ -410,11 +410,11 @@ bool ov::pass::ConvertPrecision::run_on_model(const std::shared_ptr<ov::Model>& 
     if (m_keep_precision_sensitive_in_fp32 && has_fp16_compression) {
         pass::Manager manager(get_pass_config(), "KeepPrecisionSensitiveInFP32");
         // Mark subgraphs with disable_fp16_compression to keep them in FP32
-        manager.register_pass<pass::Serialize>("opt1_1.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_1.xml", "");
         manager.register_pass<pass::MarkSugraphsToKeepInMixedPrecision>();
-        manager.register_pass<pass::Serialize>("opt1_2.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_2.xml", "");
         manager.register_pass<pass::AlignMixedFP32FP16Types>();
-        manager.register_pass<pass::Serialize>("opt1_3.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_3.xml", "");
         manager.run_passes(f);
     }
 
@@ -494,11 +494,11 @@ bool ov::pass::ConvertPrecision::run_on_model(const std::shared_ptr<ov::Model>& 
     // to remove extra converts
     if (m_keep_precision_sensitive_in_fp32) {
         pass::Manager manager(get_pass_config(), "KeepPrecisionSensitiveInFP32:RemoveConverts");
-        manager.register_pass<pass::Serialize>("opt1_4.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_4.xml", "");
         manager.register_pass<pass::EnableDecompressionConvertConstantFolding>();
-        manager.register_pass<pass::Serialize>("opt1_5.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_5.xml", "");
         manager.register_pass<pass::ConstantFolding>();
-        manager.register_pass<pass::Serialize>("opt1_6.xml", "");
+        // manager.register_pass<pass::Serialize>("opt1_6.xml", "");
         manager.run_passes(f);
     }
 

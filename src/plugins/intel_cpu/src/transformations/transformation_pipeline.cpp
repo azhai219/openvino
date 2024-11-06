@@ -410,7 +410,7 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
         const bool keep_precision_sensitive_in_fp32 = true;
         const bool need_convert_input_output_precision = false;
         const bool save_original_precision_attribute = true;
-        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "opt1.xml", "");
+        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_opt1.xml", "");
         CPU_REGISTER_PASS_COMMON(manager,
                                  ov::pass::ConvertPrecision,
                                  fp_convert_precision_map,
@@ -418,7 +418,7 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
                                  keep_precision_sensitive_in_fp32,
                                  need_convert_input_output_precision,
                                  save_original_precision_attribute);
-        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "opt2.xml", "");
+        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_opt2.xml", "");
     }
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::KeepConstAndDecompression);
     CPU_SET_CALLBACK_COMMON(manager,
@@ -700,6 +700,7 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::KeepConstAndDecompression);
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::ConstantFolding);
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::LoraSubgraphFusion);
+    CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_p1.xml", "");
 
     manager.run_passes(model);
 }
@@ -814,6 +815,7 @@ void Transformations::PostLpt() {
 
     ov::pass::Manager postLPTPassManager("CPU:PostLPT");
     postLPTPassManager.set_per_pass_validation(false);
+    CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::Serialize, "cpu_p2.xml", "");
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::UnrollTensorIterator);
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::ReshapePRelu);
     CPU_SET_CALLBACK_COMMON(postLPTPassManager,
@@ -903,6 +905,7 @@ void Transformations::PostLpt() {
         CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::MarkRopeInputsToKeepInMixedPrecision);
         CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::MarkFloatingPointRange);
     }
+    CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::Serialize, "cpu_p3.xml", "");
 
     // Should be before Snippets pipeline because Ngram pattern contains eltwise nodes that can be tokenized by Snippets.
     auto symbolic_pipeline = CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::SymbolicOptimizations, false);

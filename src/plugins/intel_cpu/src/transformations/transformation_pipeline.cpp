@@ -410,7 +410,6 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
         const bool keep_precision_sensitive_in_fp32 = true;
         const bool need_convert_input_output_precision = false;
         const bool save_original_precision_attribute = true;
-        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_opt1.xml", "");
         CPU_REGISTER_PASS_COMMON(manager,
                                  ov::pass::ConvertPrecision,
                                  fp_convert_precision_map,
@@ -418,7 +417,6 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
                                  keep_precision_sensitive_in_fp32,
                                  need_convert_input_output_precision,
                                  save_original_precision_attribute);
-        CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_opt2.xml", "");
     }
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::KeepConstAndDecompression);
     CPU_SET_CALLBACK_COMMON(manager,
@@ -700,7 +698,6 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::KeepConstAndDecompression);
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::ConstantFolding);
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::LoraSubgraphFusion);
-    CPU_REGISTER_PASS_COMMON(manager, ov::pass::Serialize, "cpu_p1.xml", "");
 
     manager.run_passes(model);
 }
@@ -891,6 +888,7 @@ void Transformations::PostLpt() {
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::transpose_sinking::TSShapeOfForward);
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, StatefulSDPAFusion);
     CPU_REGISTER_PASS_X64(postLPTPassManager, ov::intel_cpu::SDPAFuseTransposeReshape);
+    CPU_REGISTER_PASS_X64(postLPTPassManager, ov::pass::RMSFusion, true);
     CPU_REGISTER_PASS_X64(postLPTPassManager, ov::pass::RMSFusion, false);
     CPU_REGISTER_PASS_X64(postLPTPassManager, ov::intel_cpu::DecomposeRMSNorm);
     CPU_SET_CALLBACK_X64(postLPTPassManager,

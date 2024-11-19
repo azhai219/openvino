@@ -56,7 +56,8 @@ void LLMMLPNode::validate_and_infer_types() {
 
     auto oshape = ishape;
     oshape[oshape.size() - 1] = w_down_shape[0];
-    set_output_type(0, itype, oshape);
+    auto otype = m_config.tail_f32 ? ov::element::f32 : itype;
+    set_output_type(0, otype, oshape);
 }
 
 std::shared_ptr<Node> LLMMLPNode::clone_with_new_inputs(const ov::OutputVector& new_args) const {

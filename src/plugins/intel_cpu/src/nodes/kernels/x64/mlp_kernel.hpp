@@ -502,7 +502,9 @@ public:
 
     const bool m_do_reduce2;
     const bool m_to_f16;
-    ReduceAdd2bh(bool do_reduce2, bool to_f16) : jit_generator(jit_name()), m_do_reduce2(do_reduce2), m_to_f16(to_f16) {
+    const bool m_out_f32;
+    ReduceAdd2bh(bool do_reduce2, bool to_f16, bool out_f32 = false) :
+        jit_generator(jit_name()), m_do_reduce2(do_reduce2), m_to_f16(to_f16), m_out_f32(out_f32) {
         create_kernel();
     }
 
@@ -510,12 +512,22 @@ public:
 
     // add two float input eltwise and convert to bf16 : ConvertFP32toBF16(src0 + src1)
     void call(float * src0, float * src1, size_t src_stride, void * pf16_dst, size_t dst_stride, int num_rows, int num_cols) {
-        auto* dst = reinterpret_cast<int16_t*>(pf16_dst);
-        for (int m = 0; m < num_rows; m++, src0 += src_stride, src1 += src_stride, dst += dst_stride) {
-            // the prefetch distance is increased to ensure by the time store happens
-            // prefetch has done and no HW prefetcher is triggered
-            auto* prefetch_dst = (m + 2 < num_rows) ? (dst + 2 * dst_stride) : (dst);
-            (*this)(src0, src1, dst, prefetch_dst, num_cols);
+        if (m_out_f32) {
+            auto* dst = reinterpret_cast<float*>(pf16_dst);
+            for (int m = 0; m < num_rows; m++, src0 += src_stride, src1 += src_stride, dst += dst_stride) {
+                // the prefetch distance is increased to ensure by the time store happens
+                // prefetch has done and no HW prefetcher is triggered
+                auto* prefetch_dst = (m + 2 < num_rows) ? (dst + 2 * dst_stride) : (dst);
+                (*this)(src0, src1, dst, prefetch_dst, num_cols);
+            }
+        } else {
+            auto* dst = reinterpret_cast<int16_t*>(pf16_dst);
+            for (int m = 0; m < num_rows; m++, src0 += src_stride, src1 += src_stride, dst += dst_stride) {
+                // the prefetch distance is increased to ensure by the time store happens
+                // prefetch has done and no HW prefetcher is triggered
+                auto* prefetch_dst = (m + 2 < num_rows) ? (dst + 2 * dst_stride) : (dst);
+                (*this)(src0, src1, dst, prefetch_dst, num_cols);
+            }
         }
     }
 

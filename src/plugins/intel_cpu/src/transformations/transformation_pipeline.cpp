@@ -126,6 +126,7 @@
 #endif
 #include "transformations/cpu_opset/x64/pass/convert_to_interaction.hpp"
 #include "transformations/cpu_opset/x64/pass/mlp_fusion.hpp"
+#include "transformations/cpu_opset/x64/pass/mlp_fuse_convert.hpp"
 #include "transformations/cpu_opset/x64/pass/qkv_proj_fusion.hpp"
 #include "transformations/cpu_opset/arm/pass/convert_group_conv.hpp"
 #include "transformations/cpu_opset/arm/pass/convert_group_conv1d.hpp"
@@ -812,7 +813,6 @@ void Transformations::PostLpt() {
 
     ov::pass::Manager postLPTPassManager("CPU:PostLPT");
     postLPTPassManager.set_per_pass_validation(false);
-    CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::Serialize, "cpu_p2.xml", "");
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::UnrollTensorIterator);
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::ReshapePRelu);
     CPU_SET_CALLBACK_COMMON(postLPTPassManager,
@@ -862,6 +862,7 @@ void Transformations::PostLpt() {
                 return node::LLMMLP::isSupportedOperation(node, errorMsg, fcDynamicQuantizationGroupSize);
             },
             MLPFusion);
+        CPU_REGISTER_PASS_X64(postLPTPassManager, MLPFuseConvert);
 
         size_t concurrency = config.streamExecutorConfig.get_threads_per_stream();
         if (concurrency == 0)
@@ -903,7 +904,6 @@ void Transformations::PostLpt() {
         CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::MarkRopeInputsToKeepInMixedPrecision);
         CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::MarkFloatingPointRange);
     }
-    CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::Serialize, "cpu_p3.xml", "");
 
     // Should be before Snippets pipeline because Ngram pattern contains eltwise nodes that can be tokenized by Snippets.
     auto symbolic_pipeline = CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::pass::SymbolicOptimizations, false);

@@ -25,6 +25,7 @@ public:
         int hidden_size;
         int up_size;
         bool gate_up_combined;
+        bool tail_f32 = false;
     };
 
     // args:
@@ -33,6 +34,7 @@ public:
     //      2: up_proj
     //      3: down_proj
     LLMMLPNode(const OutputVector& args, const Config& cfg) : Op(args), m_config(cfg) {
+        m_args = args;
         validate_and_infer_types();
     }
 
@@ -46,8 +48,17 @@ public:
         return m_config;
     }
 
+    void set_config(const Config& config) {
+        m_config = config;
+    }
+
+    const OutputVector& get_args() {
+        return m_args;
+    }
+
 private:
     Config m_config;
+    OutputVector m_args;
 };
 
 }  // namespace intel_cpu

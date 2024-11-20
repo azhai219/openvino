@@ -617,8 +617,8 @@ void ReduceAdd2bh::generate() {
             vaddps(zmm0, zmm0, zmm1);
             vaddps(zmm2, zmm2, zmm3);
             if (m_out_f32 && m_to_f16) {
-                vmovups(ptr[dst + loop_i * 2], zmm0);
-                vmovups(ptr[dst + loop_i * 2 + 64], zmm2);
+                vmovups(ptr[dst + loop_i * 4], zmm0);
+                vmovups(ptr[dst + loop_i * 4 + 64], zmm2);
                 prefetchwt1(ptr[prefetch_dst + loop_i * 2]);
             } else {
                 // convert fp32 to fp16 or bf16
@@ -655,8 +655,8 @@ void ReduceAdd2bh::generate() {
             vmovups(zmm0, ptr[src0 + loop_i * 4]);
             vmovups(zmm2, ptr[src0 + loop_i * 4 + 16 * 4]);
             if (m_out_f32 && m_to_f16) {
-                vmovups(ptr[dst + loop_i * 2], zmm0);
-                vmovups(ptr[dst + loop_i * 2 + 64], zmm2);
+                vmovups(ptr[dst + loop_i * 4], zmm0);
+                vmovups(ptr[dst + loop_i * 4 + 64], zmm2);
                 prefetchwt1(ptr[prefetch_dst + loop_i * 2]);
             } else {
                 if (m_to_f16) {

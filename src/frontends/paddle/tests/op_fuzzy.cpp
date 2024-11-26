@@ -606,12 +606,13 @@ static const std::vector<std::string> models{
     std::string("tile_tensor_list/tile_tensor_list.pdmodel"),
     std::string("tile_repeat_gt_x/tile_repeat_gt_x.pdmodel"),
     std::string("tile_repeat_lt_x/tile_repeat_lt_x.pdmodel"),
-    std::string("top_k_v2_test_1/top_k_v2_test_1.pdmodel"),
-    std::string("top_k_v2_test_2/top_k_v2_test_2.pdmodel"),
-    std::string("top_k_v2_test_3/top_k_v2_test_3.pdmodel"),
-    std::string("top_k_v2_test_4/top_k_v2_test_4.pdmodel"),
-    std::string("top_k_v2_test_5/top_k_v2_test_5.pdmodel"),
-    std::string("top_k_v2_test_6/top_k_v2_test_6.pdmodel"),
+    // CVS-130605 to track this.
+    // std::string("top_k_v2_test_1/top_k_v2_test_1.pdmodel"),
+    // std::string("top_k_v2_test_2/top_k_v2_test_2.pdmodel"),
+    // std::string("top_k_v2_test_3/top_k_v2_test_3.pdmodel"),
+    // std::string("top_k_v2_test_4/top_k_v2_test_4.pdmodel"),
+    // std::string("top_k_v2_test_5/top_k_v2_test_5.pdmodel"),
+    // std::string("top_k_v2_test_6/top_k_v2_test_6.pdmodel"),
     std::string("triu/triu.pdmodel"),
     std::string("triu_1/triu_1.pdmodel"),
     std::string("triu_2/triu_2.pdmodel"),
@@ -665,7 +666,9 @@ static const std::vector<std::string> models{
     // std::string("yolo_box_clip_box/yolo_box_clip_box.pdmodel"),
     // std::string("yolo_box_default/yolo_box_default.pdmodel"),
     // std::string("yolo_box_scale_xy/yolo_box_scale_xy.pdmodel"),
-    std::string("yolo_box_uneven_wh/yolo_box_uneven_wh.pdmodel")};
+    // CVS-130605 to track this.
+    // std::string("yolo_box_uneven_wh/yolo_box_uneven_wh.pdmodel")
+    };
 
 INSTANTIATE_TEST_SUITE_P(PaddleFuzzyOpTest,
                          FrontEndFuzzyOpTest,

@@ -257,7 +257,7 @@ protected:
 
     // For dumping purposes. -1 - no counting, all other positive
     // values mean increment it within each Infer() call
-    int infer_count = -1;
+    int infer_count = 0;
 
     std::vector<NodePtr> graphNodes;
     std::vector<EdgePtr> graphEdges;

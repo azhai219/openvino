@@ -45,6 +45,7 @@
 #include "utils/node_dumper.h"
 #include "utils/precision_support.h"
 #include "utils/verbose.h"
+#include "utils/linux_perf.hpp"
 
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO)
 #    include <tbb/task.h>

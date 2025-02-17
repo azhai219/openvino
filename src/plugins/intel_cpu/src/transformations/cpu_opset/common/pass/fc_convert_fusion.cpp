@@ -22,7 +22,8 @@ FcConvertFusion::FcConvertFusion() {
 
     auto a = any_input();
     auto b = any_input();
-    auto fc = wrap_type<ov::op::internal::FullyConnected>({a, b}, consumers_count(1));
+    auto c = any_input();
+    auto fc = wrap_type<ov::op::internal::FullyConnected>({a, b, c}, consumers_count(1));
     auto convert = wrap_type<ov::op::v0::Convert>({fc}, type_matches(ov::element::f32));
 
     ov::matcher_pass_callback callback = [=](Matcher& m) {
@@ -30,7 +31,9 @@ FcConvertFusion::FcConvertFusion() {
 
         const auto& m_a = pattern_map.at(a).get_node_shared_ptr();
         const auto& m_b = pattern_map.at(b).get_node_shared_ptr();
+        const auto& m_c = pattern_map.at(c).get_node_shared_ptr();
         const auto& m_fc = pattern_map.at(fc).get_node_shared_ptr();
+        auto fc_name = m_fc->get_friendly_name();
 
         if (!one_of(m_a->get_output_element_type(0), ov::element::f16, ov::element::bf16, ov::element::f32) &&
             !one_of(m_b->get_output_element_type(0), ov::element::f16, ov::element::bf16, ov::element::f32)) {
@@ -45,7 +48,7 @@ FcConvertFusion::FcConvertFusion() {
 
         const auto& m_convert = pattern_map.at(convert).get_node_shared_ptr();
         auto output_type = m_convert->get_output_element_type(0);
-        auto new_fc = std::make_shared<ov::op::internal::FullyConnected>(m_a, m_b, output_type);
+        auto new_fc = std::make_shared<ov::op::internal::FullyConnected>(m_a, m_b, m_c, output_type);
 
         new_fc->set_friendly_name(m_convert->get_friendly_name());
         copy_runtime_info(m.get_matched_nodes(), new_fc);

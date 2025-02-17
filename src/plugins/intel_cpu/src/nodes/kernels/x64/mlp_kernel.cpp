@@ -626,11 +626,19 @@ void ReduceAdd2bh::generate() {
         Xbyak::Reg64 prefetch_dst = r10;
         Xbyak::Reg64 BN = r11;
 
-        mov(src0, ptr[abi_param1 + offsetof(CallArgs, src0)]);
-        mov(src1, ptr[abi_param1 + offsetof(CallArgs, src1)]);
-        mov(dst, ptr[abi_param1 + offsetof(CallArgs, dst)]);
-        mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs, prefetch_dst)]);
-        mov(BN, ptr[abi_param1 + offsetof(CallArgs, num_cols)]);
+        if (m_output_type == ov::element::f32) {
+            mov(src0, ptr[abi_param1 + offsetof(CallArgs<float>, src0)]);
+            mov(src1, ptr[abi_param1 + offsetof(CallArgs<float>, src1)]);
+            mov(dst, ptr[abi_param1 + offsetof(CallArgs<float>, dst)]);
+            mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs<float>, prefetch_dst)]);
+            mov(BN, ptr[abi_param1 + offsetof(CallArgs<float>, num_cols)]);
+        } else if (one_of(m_output_type, ov::element::bf16, ov::element::f16)) {
+            mov(src0, ptr[abi_param1 + offsetof(CallArgs<int16_t>, src0)]);
+            mov(src1, ptr[abi_param1 + offsetof(CallArgs<int16_t>, src1)]);
+            mov(dst, ptr[abi_param1 + offsetof(CallArgs<int16_t>, dst)]);
+            mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs<int16_t>, prefetch_dst)]);
+            mov(BN, ptr[abi_param1 + offsetof(CallArgs<int16_t>, num_cols)]);
+        }
 
         Xbyak::Reg64 loop_i = rax;
 
@@ -674,10 +682,17 @@ void ReduceAdd2bh::generate() {
         Xbyak::Reg64 prefetch_dst = r10;
         Xbyak::Reg64 BN = r11;
 
-        mov(src0, ptr[abi_param1 + offsetof(CallArgs, src0)]);
-        mov(dst, ptr[abi_param1 + offsetof(CallArgs, dst)]);
-        mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs, prefetch_dst)]);
-        mov(BN, ptr[abi_param1 + offsetof(CallArgs, num_cols)]);
+        if (m_output_type == ov::element::f32) {
+            mov(src0, ptr[abi_param1 + offsetof(CallArgs<float>, src0)]);
+            mov(dst, ptr[abi_param1 + offsetof(CallArgs<float>, dst)]);
+            mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs<float>, prefetch_dst)]);
+            mov(BN, ptr[abi_param1 + offsetof(CallArgs<float>, num_cols)]);
+        } else if (one_of(m_output_type, ov::element::bf16, ov::element::f16)) {
+            mov(src0, ptr[abi_param1 + offsetof(CallArgs<int16_t>, src0)]);
+            mov(dst, ptr[abi_param1 + offsetof(CallArgs<int16_t>, dst)]);
+            mov(prefetch_dst, ptr[abi_param1 + offsetof(CallArgs<int16_t>, prefetch_dst)]);
+            mov(BN, ptr[abi_param1 + offsetof(CallArgs<int16_t>, num_cols)]);
+        }
 
         Xbyak::Reg64 loop_i = rax;
 

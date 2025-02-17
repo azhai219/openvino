@@ -139,12 +139,14 @@ void RMSNorm::initSupportedPrimitiveDescriptors() {
         return;
     }
     auto in_precision = getOriginalInputPrecisionAtPort(0);
-    if (!one_of(in_precision, ov::element::f32, ov::element::bf16, ov::element::f16))
+    if (!one_of(in_precision, ov::element::f32, ov::element::bf16, ov::element::f16)) {
         in_precision = ov::element::f32;
+    }
 
     auto out_precision = getOriginalOutputPrecisionAtPort(0);
-    if (!one_of(out_precision, ov::element::f32, ov::element::bf16, ov::element::f16))
+    if (!one_of(out_precision, ov::element::f32, ov::element::bf16, ov::element::f16)) {
         out_precision = ov::element::f32;
+    }
 
     impl_desc_type impl_type;
     if (mayiuse(cpu::x64::avx512_core)) {

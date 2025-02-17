@@ -521,18 +521,20 @@ public:
     const bool m_do_reduce2;
     const ov::element::Type m_output_type;
     ReduceAdd2bh(bool do_reduce2, const ov::element::Type output_type = ov::element::undefined)
-        : jit_generator(jit_name()), m_do_reduce2(do_reduce2), m_output_type(output_type) {
+        : jit_generator(jit_name()),
+          m_do_reduce2(do_reduce2),
+          m_output_type(output_type) {
         create_kernel();
     }
 
     void generate() override;
 
-    template <typename D>
+    template <typename T>
     struct CallArgs {
         float* src0;
         float* src1;
-        D* dst;
-        int16_t* prefetch_dst;
+        T* dst;
+        T* prefetch_dst;
         int64_t num_cols;
     };
     // add two float input eltwise and convert to bf16 : ConvertFP32toBF16(src0 + src1)
@@ -544,19 +546,21 @@ public:
             args.src1 = src1;
             args.dst = reinterpret_cast<float*>(out_dst);
             args.num_cols = num_cols;
-            for (int m = 0; m < num_rows; m++, args.src0 += src_stride, args.src1 += src_stride, args.dst += dst_stride) {
+            for (int m = 0; m < num_rows;
+                 m++, args.src0 += src_stride, args.src1 += src_stride, args.dst += dst_stride) {
                 // the prefetch distance is increased to ensure by the time store happens
                 // prefetch has done and no HW prefetcher is triggered
-                auto* prefetch_dst = (m + 2 < num_rows) ? (dst + 2 * dst_stride) : (dst);
+                args.prefetch_dst = (m + 2 < num_rows) ? (args.dst + 2 * dst_stride) : (args.dst);
                 (*this)(&args);
             }
         } else if (one_of(m_output_type, ov::element::bf16, ov::element::f16)) {
             CallArgs<int16_t> args;
             args.src0 = src0;
             args.src1 = src1;
-            args.dst = reinterpret_cast<int16_t*>(pf16_dst);
+            args.dst = reinterpret_cast<int16_t*>(out_dst);
             args.num_cols = num_cols;
-            for (int m = 0; m < num_rows; m++, args.src0 += src_stride, args.src1 += src_stride, args.dst += dst_stride) {
+            for (int m = 0; m < num_rows;
+                 m++, args.src0 += src_stride, args.src1 += src_stride, args.dst += dst_stride) {
                 // the prefetch distance is increased to ensure by the time store happens
                 // prefetch has done and no HW prefetcher is triggered
                 args.prefetch_dst = (m + 2 < num_rows) ? (args.dst + 2 * dst_stride) : (args.dst);

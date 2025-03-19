@@ -76,6 +76,7 @@
 #include "utils/node_dumper.h"
 #include "utils/verbose.h"
 #include "weights_cache.hpp"
+#include "utils/linux_perf.hpp"
 
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO || OV_THREAD == OV_THREAD_TBB_ADAPTIVE || \
      OV_THREAD == OV_THREAD_OMP)
@@ -1216,6 +1217,7 @@ bool Graph::ProcessDynNodes() const {
 
 void Graph::PushInputData(const std::size_t& index, const ov::SoPtr<ITensor>& input) {
     OPENVINO_ASSERT(IsReady(), "Wrong state. Topology not ready.");
+    auto prof = LinuxPerf::Profile("PushInputData");
     if (index < inputNodes.size() && inputNodes[index]) {
         auto node = inputNodes[index];
         auto childEdge = node->getChildEdgeAt(0);
@@ -1247,6 +1249,7 @@ void Graph::PushInputData(const std::size_t& index, const ov::SoPtr<ITensor>& in
 // suppose always being shared infer_request intel_cpu::Tensor to Graph if isDynamic.
 void Graph::PullOutputData(std::unordered_map<std::size_t, ov::SoPtr<ITensor>>& output) {
     OPENVINO_ASSERT(IsReady(), "Wrong state. Topology not ready.");
+    auto prof = LinuxPerf::Profile("PullOutputData");
 
     for (size_t output_index = 0; output_index < outputNodes.size(); ++output_index) {
         auto node = outputNodes[output_index];
@@ -1359,6 +1362,7 @@ VecMemoryDescs Graph::getOutputMemoryDescriptors() const {
 }
 
 void Graph::InferStatic(SyncInferRequest* request, int numaId) {
+    auto profile = LinuxPerf::Profile(std::string("Graph::InferStatic_#") + std::to_string(infer_count));
     for (const auto& node : m_executableGraphNodes) {
         ExecuteNodeWithCatch(node, request, numaId);
     }
@@ -1617,6 +1621,7 @@ inline void Graph::ExecuteNode(const NodePtr& node, SyncInferRequest* request, i
 inline void Graph::ExecuteNodeWithCatch(const NodePtr& node, SyncInferRequest* request, int numaId) const {
     VERBOSE_PERF_DUMP_ITT_DEBUG_LOG(itt::domains::ov_op_cpu_exec, node, getConfig());
 
+    auto prof = LinuxPerf::Profile(node->getTypeStr());
     try {
         ExecuteNode(node, request, numaId);
     } catch (const ov::Cancelled&) {
@@ -1628,6 +1633,7 @@ inline void Graph::ExecuteNodeWithCatch(const NodePtr& node, SyncInferRequest* r
 
 template <typename UpdateStrategy>
 void Graph::InferDynamic(SyncInferRequest* request, int numaId, UpdateStrategy&& update) {
+    auto profile = LinuxPerf::Profile(std::string("Graph::InferDynamic_#") + std::to_string(infer_count));
     size_t inferCounter = 0;
     for (auto stopIndx : m_executableSyncNodesInds) {
         std::forward<UpdateStrategy>(update)(stopIndx);

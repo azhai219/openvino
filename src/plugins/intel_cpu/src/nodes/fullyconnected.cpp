@@ -64,15 +64,15 @@ namespace ov::intel_cpu::node {
 ov::element::TypeVector FullyConnected::getSupportedCompressedWeightsTypes([[maybe_unused]] bool apply_fp8) {
     using ov::element::Type_t;
 
-    bool useMatmulPrim = true;
-    // CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
-
-    if (useMatmulPrim) {
-        return {Type_t::u8, Type_t::i8, Type_t::u4, Type_t::i4};
-    }
 #if defined(OPENVINO_ARCH_X86_64)
-    ov::element::TypeVector supportedDataTypes =
-        {Type_t::u8, Type_t::i8, Type_t::u4, Type_t::i4, Type_t::nf4, Type_t::f4e2m1};
+    bool useMatmulPrim = false;
+    CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
+    ov::element::TypeVector supportedDataTypes = {Type_t::u8, Type_t::i8, Type_t::u4, Type_t::i4};
+    if (useMatmulPrim) {
+        return supportedDataTypes;
+    }
+    // current matmul does not supported nf4 and f4e2m1 in onednn rls-v3.8
+    supportedDataTypes.insert(supportedDataTypes.end(), {Type_t::nf4, Type_t::f4e2m1});
     if (apply_fp8) {
         supportedDataTypes.insert(supportedDataTypes.end(), {Type_t::f8e4m3, Type_t::f8e5m2});
     }
@@ -87,13 +87,13 @@ ov::element::TypeVector FullyConnected::getSupportedCompressedWeightsTypes([[may
 ov::element::TypeVector FullyConnected::getSupportedCompressedActivationsTypes() {
     using ov::element::Type_t;
 
-    bool useMatmulPrim = true;
-    // CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
+#if defined(OPENVINO_ARCH_X86_64)
+    bool useMatmulPrim = false;
+    CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
 
     if (useMatmulPrim) {
         return {Type_t::f32, Type_t::f16};
     }
-#if defined(OPENVINO_ARCH_X86_64)
     // @todo enable for bf16 as well
     // after EnforceInferencePrecision is replaced with ConvertPrecision
     return {Type_t::f32};
@@ -199,8 +199,8 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
     }
     return true;
 #else
-    bool useMatmulPrim = true;
-    // CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
+    bool useMatmulPrim = false;
+    CPU_DEBUG_CAP_ENABLE(useMatmulPrim = getEnvBool("OV_CPU_ENABLE_DNNL_MAMTUL_FOR_FC");)
     return useMatmulPrim;
 #endif
 }

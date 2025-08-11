@@ -496,12 +496,6 @@ void Reorder::reorderData(const IMemory& input, const IMemory& output, const Mul
         auto srcMemoryDesc = srcMemory.get_desc();
         auto dstMemoryDesc = dstMemory.get_desc();
 
-        // auto srcfmt = srcMemoryDesc.get_format_kind();
-        // auto srctype = srcMemoryDesc.get_data_type();
-
-        // auto dstfmt = dstMemoryDesc.get_format_kind();
-        // auto dsttype = dstMemoryDesc.get_data_type();
-
         auto engine = dstMemory.get_engine();
 
         if (srcMemoryDesc.get_ndims() != dstMemoryDesc.get_ndims()) {
@@ -537,6 +531,58 @@ void Reorder::reorderData(const IMemory& input, const IMemory& output, const Mul
 
                 srcMemory = tmpMem.getPrimitive();
                 reorder = getReorderPrim(cache, dstMemory.get_engine(), srcMemory.get_desc(), dstMemory.get_desc());
+            }
+            if (!reorder &&
+                srcMemoryDesc.get_data_type() == dstMemoryDesc.get_data_type() &&
+                srcMemoryDesc.get_data_type() == dnnl::memory::data_type::u4) {
+
+                auto srcfmt = srcMemoryDesc.get_format_kind();
+                auto srctype = srcMemoryDesc.get_data_type();
+
+                auto dstfmt = dstMemoryDesc.get_format_kind();
+                auto dsttype = dstMemoryDesc.get_data_type();
+
+                auto src_ds = srcMemoryDesc.get_dims();
+                auto dst_ds = dstMemoryDesc.get_dims();
+
+                int32_t tensor_k = src_ds[0];
+                int32_t tensor_n = src_ds[1]/8;
+
+                auto it = input.getDesc().serializeFormat();
+                auto ot = output.getDesc().serializeFormat();
+                auto transpose_u4 = [](const uint32_t* src,
+                                       uint32_t* dst,
+                                       int32_t K,
+                                       int32_t N){
+                    // Iterate over the src vector to transpose the INT4 data
+                    for (size_t i = 0; i < K * N; ++i) {
+                        int32_t src_byte = src[i];
+                        // Extract 8 INT4 values from src_byte
+                        for (int32_t j = 0; j < 8; ++j) {
+                            int32_t src_idx = i * 8 + j; // Index of the INT4 value in the flattened [K, N] matrix
+                            if (src_idx >= K * N) break; // Avoid accessing beyond the matrix size
+
+                            // Compute source matrix coordinates
+                            int32_t k = src_idx / N; // Row index in [K, N]
+                            int32_t n = src_idx % N; // Column index in [K, N]
+
+                            // Compute destination matrix coordinates for [N, K]
+                            int32_t dst_idx = n * K + k; // Flattened index in [N, K]
+                            int32_t dst_byte_idx = dst_idx / 8; // Which INT32 in dst
+                            int32_t dst_nibble_offset = dst_idx % 8; // Which nibble within the INT32
+
+                            // Extract the INT4 value
+                            int8_t src_int4 = (src_byte >> (j * 4)) & 0x0F;
+
+                            // Pack the INT4 value into dst
+                            dst[dst_byte_idx] |= (src_int4 << (dst_nibble_offset * 4));
+                        }
+                    }
+                };
+                uint32_t* src_data = reinterpret_cast<uint32_t*>(input.getData());
+                uint32_t* dst_data = reinterpret_cast<uint32_t*>(output.getData());
+                transpose_u4(src_data, dst_data, tensor_k, tensor_n);
+                return;
             }
             OPENVINO_ASSERT(reorder,
                             "No reorder available for the following tensor descriptors: ",

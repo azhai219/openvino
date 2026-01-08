@@ -420,6 +420,11 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                         VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
                         return true;
                     })
+                // test for decompression
+                if (any_of(srcType(config), f32) && any_of(weiType(config), u8, i8, u4, i4)) {
+                    std::cerr << "[####] dispatch to matmul_dnnl\n";
+                    return true;
+                }
                 VERIFY(dnnlMatMulSupportedPrecision(config), UNSUPPORTED_SRC_WEI_PRECISIONS);
                 VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
                 VERIFY(weiRank(config) == 3U, UNSUPPORTED_WEI_RANK);

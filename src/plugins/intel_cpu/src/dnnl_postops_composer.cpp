@@ -797,10 +797,12 @@ static dnnl::memory::dims getGroupDims(const VectorDims& weiDims, const VectorDi
 
     int N = weiDims[weiDims.size() - 2];
     int K = weiDims[weiDims.size() - 1];
-    dnnl::memory::dim groupN = N / scaleDims[0];
-    dnnl::memory::dim groupK = K / scaleDims[1];
 
-    return {groupK, groupN};
+    dnnl::memory::dims groupDims(weiDims.size(), 1);
+    groupDims[0] = K / scaleDims[1]; // groupK
+    groupDims[1] = N / scaleDims[0]; // groupN
+
+    return groupDims; // {groupK, groupN};
 }
 
 static int getMask(const dnnl::memory::dims& groupDims) {

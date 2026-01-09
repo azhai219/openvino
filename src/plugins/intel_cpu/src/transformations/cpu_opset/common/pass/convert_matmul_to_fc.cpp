@@ -102,9 +102,9 @@ ov::intel_cpu::ConvertMatMulToFC::ConvertMatMulToFC() {
                     (const_shape.size() == 3 && const_shape[0] > 1));
         };
 
-        if (is_3d_decompression_path(fc_input_b.get_node_shared_ptr())) {
-            return false;
-        }
+        // if (is_3d_decompression_path(fc_input_b.get_node_shared_ptr())) {
+        //     return false;
+        // }
 #endif
 
         auto shape_a = fc_input_a.get_partial_shape();

@@ -100,6 +100,7 @@ void MatmulWeightsDecompression::SetUp() {
                             decompression_multiply_type,
                             decompression_subtract_type,
                             reshape_on_decompression);
+    ov::save_model(function, "wei_3d_decomp/model.xml");
 }
 
 void MatmulWeightsDecompression::check_results() {

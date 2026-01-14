@@ -117,7 +117,7 @@ ov::pass::ConvertFullyConnectedToFullyConnectedCompressed::process_compressed_we
     }
 
     fc_input_zp =
-        with_zero_point ? fc_input_zp : std::make_shared<ov::op::v0::Constant>(ov::element::dynamic, ov::Shape{0});
+        with_zero_point ? fc_input_zp : std::make_shared<ov::op::v0::Constant>(fc_input_b->get_element_type(), ov::Shape{1}, 0);
     ov::disable_constant_folding(fc_input_zp);
     result_nodes.push_back(fc_input_zp);
 

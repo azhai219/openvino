@@ -790,19 +790,23 @@ static MemoryPtr prepackDecompressionParams(const MemoryCPtr& paramsPtr,
     return dstMem;
 }
 
-static dnnl::memory::dims getGroupDims(const VectorDims& weiDims, const VectorDims& scaleDims) {
+static dnnl::memory::dims getGroupDims(const VectorDims& weiDims, const VectorDims& scaleDims, bool weiNeedTranspose) {
     if (all_of(1U, scaleDims[0], scaleDims[1])) {
         return {};
     }
 
-    int N = weiDims[weiDims.size() - 2];
-    int K = weiDims[weiDims.size() - 1];
+    /*
+        If no transpose, the wei dims should be like [..., N, K].
+        Attention please, the last dim is K.
+        Otherwise, the wei dims should be like [..., K, N].
+    */
+    const int K = weiNeedTranspose ? weiDims[weiDims.size() - 2] : weiDims[weiDims.size() - 1];
+    const int N = weiNeedTranspose ? weiDims[weiDims.size() - 1] : weiDims[weiDims.size() - 2];
 
-    dnnl::memory::dims groupDims(weiDims.size(), 1);
-    groupDims[0] = K / scaleDims[1]; // groupK
-    groupDims[1] = N / scaleDims[0]; // groupN
+    int groupK = K / scaleDims[1]; // groupK
+    int groupN = N / scaleDims[0]; // groupN
 
-    return groupDims; // {groupK, groupN};
+    return {groupK, groupN};
 }
 
 static int getMask(const dnnl::memory::dims& groupDims) {
@@ -816,16 +820,25 @@ static int getMask(const dnnl::memory::dims& groupDims) {
 }
 
 void DnnlPostOpsComposer::appendDecompressionScales(const MemoryCPtr& scales_ptr,
-                                                    bool needTranspose,
+                                                    bool weiNeedTranspose,
                                                     ov::element::Type dstPrecision,
                                                     const VectorDims& weiDims) {
     if (scales_ptr == nullptr) {
         return;
     }
 
-    auto scaleMem = prepackDecompressionParams(scales_ptr, needTranspose, dstPrecision, engine);
-    auto groupDims = getGroupDims(weiDims, scaleMem->getStaticDims());
-    auto mask = getMask(groupDims);
+    MemoryPtr scaleMem;
+    dnnl::memory::dims groupDims;
+    int mask;
+    if (scales_ptr->getShape().getElementsCount() == 1) {
+        scaleMem = std::make_shared<Memory>(engine, scales_ptr->getDesc(), scales_ptr->getData());
+        groupDims = {};
+        mask = 0;
+    } else {
+        scaleMem = prepackDecompressionParams(scales_ptr, weiNeedTranspose, dstPrecision, engine);
+        groupDims = getGroupDims(weiDims, scaleMem->getStaticDims(), weiNeedTranspose);
+        mask = getMask(groupDims);
+    }
     auto scaleDims = scaleMem->getStaticDims();
 
     attr.set_scales(DNNL_ARG_WEIGHTS, mask, groupDims, DnnlExtensionUtils::ElementTypeToDataType(dstPrecision));
@@ -835,21 +848,30 @@ void DnnlPostOpsComposer::appendDecompressionScales(const MemoryCPtr& scales_ptr
 }
 
 void DnnlPostOpsComposer::appendDecompressionZeroPoints(const MemoryCPtr& zero_points_ptr,
-                                                        bool needTranspose,
+                                                        bool weiNeedTranspose,
                                                         ov::element::Type dstPrecision,
                                                         const VectorDims& weiDims) {
     if (zero_points_ptr == nullptr) {
         return;
     }
 
-    auto zeroPointsMem = prepackDecompressionParams(zero_points_ptr, needTranspose, dstPrecision, engine);
-    auto groupDims = getGroupDims(weiDims, zeroPointsMem->getStaticDims());
-    auto mask = getMask(groupDims);
-    auto zpsDims = zeroPointsMem->getStaticDims();
+    MemoryPtr zpMem;
+    dnnl::memory::dims groupDims;
+    int mask;
+    if (zero_points_ptr->getShape().getElementsCount() == 1) {
+        zpMem = std::make_shared<Memory>(engine, zero_points_ptr->getDesc(), zero_points_ptr->getData());
+        groupDims = {};
+        mask = 0;
+    } else {
+        zpMem = prepackDecompressionParams(zero_points_ptr, weiNeedTranspose, dstPrecision, engine);
+        groupDims = getGroupDims(weiDims, zpMem->getStaticDims(), weiNeedTranspose);
+        mask = getMask(groupDims);
+    }
+    auto zpsDims = zpMem->getStaticDims();
 
     attr.set_zero_points(DNNL_ARG_WEIGHTS, mask, groupDims, DnnlExtensionUtils::ElementTypeToDataType(dstPrecision));
-    cpuArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zeroPointsMem;
-    dnnlArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zeroPointsMem->getPrimitive();
+    cpuArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zpMem;
+    dnnlArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zpMem->getPrimitive();
 }
 
 void DnnlPostOpsComposer::appendDecompressionScalesLegacy(const MemoryCPtr& scales_ptr,

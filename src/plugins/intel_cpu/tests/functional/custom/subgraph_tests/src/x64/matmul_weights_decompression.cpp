@@ -427,7 +427,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_MatMulCompressedWeights_non_multiples_groups,
 // but as decompression subgraph and f32 FC, due to onednn limitation.
 const std::vector<MatMulDecompressionShapeParams> input_shapes_with_3d_weight = {
     {{{}, {{3, 10, 32}}}, {3, 32, 128}},
-    {{{}, {{2, 16}}}, {5, 16, 64}},
+    {{{}, {{2, 16}}}, {2, 16, 4}},
 };
 INSTANTIATE_TEST_SUITE_P(smoke_MatMulCompressedWeights_3D_Weights,
                          MatmulWeightsDecompression,

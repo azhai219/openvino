@@ -544,6 +544,19 @@ double calculate_default_rel_threshold(const ov::element::Type& expected_type,
 
 }  // namespace tensor_comparation
 
+template <typename T>
+void dump_tensor_func(T* data, size_t nums, const std::string& file_name) {
+    std::ofstream file(file_name, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Can't open file " + file_name);
+    }
+    for (size_t i = 0; i < nums; ++i) {
+        file << data[i] << "\n";
+    }
+    file.close();
+
+}
+
 template <typename ExpectedT, typename ActualT>
 void compare(const ov::Tensor& expected,
              const ov::Tensor& actual,
@@ -590,6 +603,8 @@ void compare(const ov::Tensor& expected,
     tensor_comparation::Error error(abs_threshold, rel_threshold, topk_threshold, mvn_threshold, shape_size_cnt);
     const auto expected_data = expected.data<ExpectedT>();
     const auto actual_data = actual.data<ActualT>();
+    dump_tensor_func(expected_data, shape_size_cnt, "expected_" + std::to_string(shape_size_cnt) + ".txt");
+    dump_tensor_func(actual_data, shape_size_cnt, "actual_" + std::to_string(shape_size_cnt) + ".txt");
     for (size_t i = 0; i < shape_size_cnt; ++i) {
         auto expected_value = expected_data[i];
         auto actual_value = actual_data[i];

@@ -771,14 +771,26 @@ static MemoryPtr prepackDecompressionParams(const MemoryCPtr& paramsPtr,
     // weights with batch: (B, OC, G)
     const size_t OC = shape[shape.size() - 2];
     const size_t G = shape[shape.size() - 1];
+    size_t B = 1;
 
-    Shape dstShape = Shape({OC, G});
+    Shape dstShape = {};
+    dnnl::memory::format_tag dstFormat, srcFormat;
+    const bool is_3d_decomp = shape.size() == 3;
+    if (is_3d_decomp) {
+        B = shape[0];
+        dstShape = Shape({B, OC, G});
+        dstFormat = dnnl::memory::format_tag::abc;
+        srcFormat = needTranspose ? dnnl::memory::format_tag::acb : dnnl::memory::format_tag::abc;
+    } else {
+        dstShape = Shape({OC, G});
+        dstFormat = dnnl::memory::format_tag::io;
+        srcFormat = needTranspose ? dnnl::memory::format_tag::oi : dnnl::memory::format_tag::io;
+    }
 
     DnnlBlockedMemoryDesc dstMemoryDesc(dstShape,
                                         DnnlExtensionUtils::ElementTypeToDataType(dstPrc),
-                                        dnnl::memory::format_tag::io);
+                                        dstFormat);
     auto dstMem = std::make_shared<Memory>(engine, dstMemoryDesc);
-    auto srcFormat = needTranspose ? dnnl::memory::format_tag::oi : dnnl::memory::format_tag::io;
 
     DnnlBlockedMemoryDesc srcMemoryDesc(
         dstShape,
@@ -791,30 +803,41 @@ static MemoryPtr prepackDecompressionParams(const MemoryCPtr& paramsPtr,
 }
 
 static dnnl::memory::dims getGroupDims(const VectorDims& weiDims, const VectorDims& scaleDims, bool weiNeedTranspose) {
+    OPENVINO_ASSERT(weiDims.size() == scaleDims.size(),
+                    "weiDims size ", weiDims.size(), " is NOT equal to scaleDims size ", scaleDims.size());
+
     if (all_of(1U, scaleDims[0], scaleDims[1])) {
         return {};
     }
 
-    /*
-        If no transpose, the wei dims should be like [..., N, K].
-        Attention please, the last dim is K.
-        Otherwise, the wei dims should be like [..., K, N].
-    */
-    const int K = weiNeedTranspose ? weiDims[weiDims.size() - 2] : weiDims[weiDims.size() - 1];
-    const int N = weiNeedTranspose ? weiDims[weiDims.size() - 1] : weiDims[weiDims.size() - 2];
+    dnnl::memory::dims groupDims(scaleDims.size(), 0);
+    for (size_t i = 0; i < scaleDims.size(); ++i) {
+        groupDims[i] = weiDims[i] / scaleDims[i];
+    }
 
-    int groupK = K / scaleDims[1]; // groupK
-    int groupN = N / scaleDims[0]; // groupN
+    // For 3 scenario, the weight or scale shape is (B, K, N).
+    // But groupDim requires shape (K, N, B).
+    // So, left roate is necessary for groupDims.
+    if (groupDims.size() == 3) {
+        std::rotate(groupDims.begin(), groupDims.end() - 1, groupDims.end());
+    }
 
-    return {groupK, groupN};
+    return groupDims;
 }
 
 static int getMask(const dnnl::memory::dims& groupDims) {
     int mask = 0;
-    for (int i=0; i<groupDims.size(); ++i) {
+    for (size_t i=0; i<groupDims.size(); ++i) {
         if (groupDims[i] > 1) {
             mask |= 1 << (groupDims.size() - 1 - i);
         }
+    }
+
+    // Now grouping over N is  not supported. So in fact It should always be like (K, 1) or (K, 1, B)
+    if (groupDims.size() == 3) {
+        mask |= 0b10;
+    } else if (groupDims.size() == 2) {
+        mask |= 0b1;
     }
     return mask;
 }
@@ -839,7 +862,6 @@ void DnnlPostOpsComposer::appendDecompressionScales(const MemoryCPtr& scales_ptr
         groupDims = getGroupDims(weiDims, scaleMem->getStaticDims(), weiNeedTranspose);
         mask = getMask(groupDims);
     }
-    auto scaleDims = scaleMem->getStaticDims();
 
     attr.set_scales(DNNL_ARG_WEIGHTS, mask, groupDims, DnnlExtensionUtils::ElementTypeToDataType(dstPrecision));
     cpuArgs[DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS] = std::move(scaleMem);

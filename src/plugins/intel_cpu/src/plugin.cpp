@@ -158,11 +158,14 @@ static bool streamsSet(const ov::AnyMap& config) {
 void Plugin::get_performance_streams(Config& config, const std::shared_ptr<ov::Model>& model) const {
     int streams_set = config.streams;
     int streams;
+    printf("=======================================================\n");
     if (config.streamsChanged) {
         streams = streams_set;
     } else if (config.hintPerfMode == ov::hint::PerformanceMode::LATENCY) {
+        printf("[DEBUG] using LATENCY MODE, set streams to 1\n");
         streams = 1;
     } else if (config.hintPerfMode == ov::hint::PerformanceMode::THROUGHPUT) {
+        printf("[DEBUG] using THROUGHPUT MODE, set streams to 0 (number of streams will be defined automatically based on number of CPU cores)\n");
         streams = 0;
     } else {
         streams = streams_set == 1 ? 0 : streams_set;

@@ -702,6 +702,17 @@ std::vector<std::vector<int>> generate_stream_info(const int streams,
                                                      ov::util::to_string(config.hintPerfMode),
                                                      config.modelDistributionPolicy,
                                                      proc_type_table);
+    printf("=======================================================\n");
+    printf("[ threading ] streams_info_table:\n");
+    for (size_t i = 0; i < streams_info_table.size(); i++) {
+        printf("%d %d %d %d %d %d\n",
+               streams_info_table[i][NUMBER_OF_STREAMS],
+               streams_info_table[i][PROC_TYPE],
+               streams_info_table[i][THREADS_PER_STREAM],
+               streams_info_table[i][STREAM_NUMA_NODE_ID],
+               streams_info_table[i][STREAM_SOCKET_ID]);
+    }
+
     // streams_info_table = {{1, 1, 56, 1, 1}, {-1, 1, 28, 1, 1}, {-1, 1, 28, 0, 0}};
     if (config.modelDistributionPolicy.find(ov::hint::ModelDistributionPolicy::TENSOR_PARALLEL) !=
         config.modelDistributionPolicy.end()) {
@@ -720,6 +731,19 @@ std::vector<std::vector<int>> generate_stream_info(const int streams,
                                                            cpu_pinning,
                                                            true,
                                                            std::move(streams_info_table)};
+
+    printf("=======================================================\n");
+    printf("[ threading ] proc_type_table:\n");
+    for (size_t i = 0; i < proc_type_table.size(); i++) {
+        printf("%d %d %d %d %d %d\n",
+               proc_type_table[i][ALL_PROC],
+               proc_type_table[i][MAIN_CORE_PROC],
+               proc_type_table[i][EFFICIENT_CORE_PROC],
+               proc_type_table[i][HYPER_THREADING_PROC],
+               proc_type_table[i][PROC_NUMA_NODE_ID],
+               proc_type_table[i][PROC_SOCKET_ID]);
+    }
+    printf("=======================================================\n");
 
     return proc_type_table;
 }

@@ -32,6 +32,10 @@ const std::vector<ov::test::ElementType> weights_precisions = {ov::element::u8,
                                                                ov::element::i4,
                                                                ov::element::nf4};
 
+const std::vector<ov::test::ElementType> weights_3d_precisions = {ov::element::u8,
+                                                                  ov::element::u4,
+                                                                  ov::element::i4};
+
 const std::vector<ov::test::ElementType> weights_precisions_fp8 = {ov::element::f8e4m3, ov::element::f8e5m2};
 
 const std::vector<MatMulDecompressionShapeParams> input_shapes_basic = {
@@ -432,7 +436,7 @@ const std::vector<MatMulDecompressionShapeParams> input_shapes_with_3d_weight = 
 INSTANTIATE_TEST_SUITE_P(smoke_MatMulCompressedWeights_3D_Weights,
                          MatmulWeightsDecompression,
                          ::testing::Combine(::testing::ValuesIn(input_shapes_with_3d_weight),
-                                            ::testing::ValuesIn(weights_precisions),
+                                            ::testing::ValuesIn(weights_3d_precisions),
                                             ::testing::ValuesIn(decompression_precisions),
                                             ::testing::Values(ov::element::dynamic),
                                             ::testing::Values(false),

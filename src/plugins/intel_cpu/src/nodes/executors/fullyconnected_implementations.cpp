@@ -177,7 +177,7 @@ static const TypeMapping dnnlMatMulTypeMapping {
         return true;
     }
     // decomp
-    if (any_of(srcType(config), f32) && any_of(weiType(config), u8, i8, u4, i4)) {
+    if (any_of(srcType(config), f32, bf16, f16) && any_of(weiType(config), u8, i8, u4, i4)) {
         return true;
     }
     // support integer type quantization matmul

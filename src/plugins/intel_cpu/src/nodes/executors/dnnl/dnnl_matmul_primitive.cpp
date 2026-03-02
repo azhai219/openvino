@@ -223,7 +223,7 @@ static DnnlPrimitiveAttrs createPrimitiveAttrs(const MatMulAttrs& attrs,
                                 attrs.dqScales);
 
     if (memory.count(ARG_WEI | ARG_ATTR_SCALES) != 0U) {
-        const bool transposeDecompressionParams = attrs.fcSemantic ? weightsNonTransposed : attrs.transposeB;
+        const bool transposeDecompressionParams = attrs.fcSemantic ? !weightsNonTransposed : attrs.transposeB;
         const auto maxRank =
             std::max({srcDesc->getShape().getRank(), weiDesc->getShape().getRank(), dstDesc->getShape().getRank()});
         const auto normWeiDims = normalizeToRank(weiDesc->getShape().getStaticDims(), maxRank);

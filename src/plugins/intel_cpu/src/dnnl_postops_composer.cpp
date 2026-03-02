@@ -784,8 +784,8 @@ static MemoryPtr prepackDecompressionParams(const MemoryCPtr& paramsPtr,
     if (is_3d_decomp) {
         B = shape[0];
         dstShape = Shape({B, OC, G});
-        dstFormat = dnnl::memory::format_tag::abc;
-        srcFormat = needTranspose ? dnnl::memory::format_tag::acb : dnnl::memory::format_tag::abc;
+        dstFormat = dnnl::memory::format_tag::acb;
+        srcFormat = needTranspose ? dnnl::memory::format_tag::abc : dnnl::memory::format_tag::acb;
     } else {
         dstShape = Shape({OC, G});
         dstFormat = dnnl::memory::format_tag::io;

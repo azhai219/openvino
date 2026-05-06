@@ -891,8 +891,8 @@ std::ostream& operator<<(std::ostream&, const Node*);
 #endif
 
 template <class... T>
-constexpr uint64_t PortMask(T... rest) {
-    return util::bit::mask(rest...);
+constexpr uint32_t PortMask(T... rest) {
+    return static_cast<uint32_t>(util::bit::mask(rest...));
 }
 
 class Node::NodesFactory

@@ -194,13 +194,15 @@ private:
     void init_w_scales(const VectorDims& scale_shape) {
         constexpr auto data_type = dnnl::memory::data_type::f32;
         const auto scale_dims = DnnlExtensionUtils::convertToDnnlDims(scale_shape);
-        attr.set_scales_dims(DNNL_ARG_WEIGHTS, scale_dims, data_type);
+        // TODO
+        // attr.set_scales_dims(DNNL_ARG_WEIGHTS, scale_dims, data_type);
         m_scale_md = dnnl::memory::desc(scale_dims, data_type, dnnl::memory::format_tag::ba);
     }
     void init_w_zp(const VectorDims& zp_shape) {
         constexpr auto data_type = dnnl::memory::data_type::f32;
         const auto zp_dims = DnnlExtensionUtils::convertToDnnlDims(zp_shape);
-        attr.set_zero_points_dims(DNNL_ARG_WEIGHTS, zp_dims, data_type);
+        // TODO
+        // attr.set_zero_points_dims(DNNL_ARG_WEIGHTS, zp_dims, data_type);
         m_zp_md = dnnl::memory::desc(zp_dims, data_type, dnnl::memory::format_tag::ba);
     }
     static std::unordered_map<int, dnnl::memory> make_args(dnnl::memory& src,

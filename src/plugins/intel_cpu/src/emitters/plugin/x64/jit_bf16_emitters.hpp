@@ -46,8 +46,6 @@ private:
             emit_isa<dnnl::impl::cpu::x64::avx512_core>(in_vec_idxs, out_vec_idxs);
         } else if (host_isa_ == dnnl::impl::cpu::x64::avx2) {
             emit_isa<dnnl::impl::cpu::x64::avx2>(in_vec_idxs, out_vec_idxs);
-        } else if (host_isa_ == dnnl::impl::cpu::x64::sse41) {
-            emit_isa<dnnl::impl::cpu::x64::sse41>(in_vec_idxs, out_vec_idxs);
         } else {
             OV_CPU_JIT_EMITTER_THROW("Unsupported ISA ", host_isa_);
         }
@@ -57,7 +55,7 @@ private:
     void emit_isa(const std::vector<size_t>& in_vec_idxs, const std::vector<size_t>& out_vec_idxs) const {
         using namespace Xbyak;
         using Vmm = typename dnnl::impl::utils::
-            conditional3<isa == dnnl::impl::cpu::x64::sse41, Xmm, isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
+            conditional<isa == dnnl::impl::cpu::x64::avx2, Ymm, Zmm>::type;
 
         const auto to_reg_idx = [](size_t idx) {
             return static_cast<int>(idx);

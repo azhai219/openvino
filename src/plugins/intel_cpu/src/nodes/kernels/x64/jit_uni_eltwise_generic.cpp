@@ -552,13 +552,7 @@ void jit_uni_eltwise_generic<isa>::load_vector(Vmm vmm_src,
             load_scalar(xmm_src, op, src_prc, dst_prc);
             switch (src_prc.size()) {
             case 1:
-                if (isa == x64::sse41) {
-                    punpcklbw(xmm_src, xmm_src);
-                    punpcklbw(xmm_src, xmm_src);
-                    pshufd(xmm_src, xmm_src, 0);
-                } else {
-                    vpbroadcastb(vmm_src, xmm_src);
-                }
+                vpbroadcastb(vmm_src, xmm_src);
                 break;
             default:
                 uni_vbroadcastss(vmm_src, xmm_src);
@@ -748,12 +742,8 @@ void jit_uni_eltwise_generic<isa>::store_vector(const Xbyak::Address& op,
             vpmovsdw(op, vmm_dst);
         } else {
             uni_vpackssdw(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vpermq(ymm_dst, ymm_dst, 0x08);
-                uni_vmovdqu(op, xmm_dst);
-            } else {
-                movq(op, xmm_dst);
-            }
+            vpermq(ymm_dst, ymm_dst, 0x08);
+            uni_vmovdqu(op, xmm_dst);
         }
         break;
     case ov::element::u16:
@@ -762,12 +752,8 @@ void jit_uni_eltwise_generic<isa>::store_vector(const Xbyak::Address& op,
             vpmovusdw(op, vmm_dst);
         } else {
             uni_vpackusdw(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vpermq(ymm_dst, ymm_dst, 0x08);
-                uni_vmovdqu(op, xmm_dst);
-            } else {
-                movq(op, xmm_dst);
-            }
+            vpermq(ymm_dst, ymm_dst, 0x08);
+            uni_vmovdqu(op, xmm_dst);
         }
         break;
     case ov::element::i8:
@@ -775,15 +761,9 @@ void jit_uni_eltwise_generic<isa>::store_vector(const Xbyak::Address& op,
             vpmovsdb(op, vmm_dst);
         } else {
             uni_vpackssdw(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vpermq(ymm_dst, ymm_dst, 0x08);
-            }
+            vpermq(ymm_dst, ymm_dst, 0x08);
             uni_vpacksswb(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vmovq(op, xmm_dst);
-            } else {
-                movd(op, xmm_dst);
-            }
+            vmovq(op, xmm_dst);
         }
         break;
     case ov::element::u8:
@@ -792,15 +772,9 @@ void jit_uni_eltwise_generic<isa>::store_vector(const Xbyak::Address& op,
             vpmovusdb(op, vmm_dst);
         } else {
             uni_vpackusdw(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vpermq(ymm_dst, ymm_dst, 0x08);
-            }
+            vpermq(ymm_dst, ymm_dst, 0x08);
             uni_vpackuswb(vmm_dst, vmm_dst, vmm_dst);
-            if (isa != x64::sse41) {
-                vmovq(op, xmm_dst);
-            } else {
-                movd(op, xmm_dst);
-            }
+            vmovq(op, xmm_dst);
         }
         break;
     default:
@@ -884,7 +858,6 @@ void jit_uni_eltwise_generic<isa>::store_scalar(const Xbyak::Address& op,
     }
 }
 
-template struct jit_uni_eltwise_generic<cpu_isa_t::sse41>;
 template struct jit_uni_eltwise_generic<cpu_isa_t::avx2>;
 template struct jit_uni_eltwise_generic<cpu_isa_t::avx512_core>;
 

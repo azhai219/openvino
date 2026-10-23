@@ -1405,11 +1405,9 @@ void MersenneTwisterGenerator<isa>::storeResults() {
 
 template class PhiloxGenerator<x64::avx512_core>;
 template class PhiloxGenerator<x64::avx2>;
-template class PhiloxGenerator<x64::sse41>;
 
 template class MersenneTwisterGenerator<x64::avx512_core>;
 template class MersenneTwisterGenerator<x64::avx2>;
-template class MersenneTwisterGenerator<x64::sse41>;
 
 #undef INIT_ARR
 #undef BROADCAST_PARAM

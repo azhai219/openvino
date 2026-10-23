@@ -45,8 +45,6 @@ impl_desc_type parse_impl_name(std::string impl_desc_name) {
     }
     SEARCH_WORD(blas);
     SEARCH_WORD(mlas);
-    SEARCH_WORD(sse42);
-    SEARCH_WORD_2(sse41, sse42);
     SEARCH_WORD(avx2);
     SEARCH_WORD(amx);
     SEARCH_WORD(avx512);

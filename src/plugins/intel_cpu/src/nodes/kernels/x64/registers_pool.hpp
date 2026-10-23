@@ -393,8 +393,6 @@ inline RegistersPool::Ptr RegistersPool::create(dnnl::impl::cpu::x64::cpu_isa_t 
     case isa:                \
         return std::make_shared<IsaRegistersPool<(isa)>>(regsToExclude);
     switch (isa) {
-        ISA_SWITCH_CASE(dnnl::impl::cpu::x64::sse41)
-        ISA_SWITCH_CASE(dnnl::impl::cpu::x64::avx)
         ISA_SWITCH_CASE(dnnl::impl::cpu::x64::avx2)
         ISA_SWITCH_CASE(dnnl::impl::cpu::x64::avx2_vnni)
         ISA_SWITCH_CASE(dnnl::impl::cpu::x64::avx512_core)

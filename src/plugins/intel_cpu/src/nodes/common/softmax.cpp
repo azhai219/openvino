@@ -278,9 +278,6 @@ SoftmaxGeneric::SoftmaxGeneric(ov::element::Type inpPrc, ov::element::Type outPr
     } else if (ov::with_cpu_x86_avx2()) {
         softmax_kernel = std::make_shared<jit_uni_softmax_kernel_f32<x64::avx2>>(jcp);
         block_size = 8;
-    } else if (ov::with_cpu_x86_sse42()) {
-        softmax_kernel = std::make_shared<jit_uni_softmax_kernel_f32<x64::sse41>>(jcp);
-        block_size = 4;
     }
     if (softmax_kernel) {
         softmax_kernel->create_ker();

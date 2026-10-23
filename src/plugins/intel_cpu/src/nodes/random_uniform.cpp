@@ -451,8 +451,6 @@ void RandomUniform::prepareGeneratorKernel() {
                 selected_pd->setImplementationType(jit_avx512);
             } else if (m_jit_kernel->getIsa() == x64::avx2) {
                 selected_pd->setImplementationType(jit_avx2);
-            } else if (m_jit_kernel->getIsa() == x64::sse41) {
-                selected_pd->setImplementationType(jit_sse42);
             }
         }
     }

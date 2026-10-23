@@ -193,8 +193,7 @@ struct jit_uni_mvn_mean_variance_kernel_f32 : public jit_uni_mvn_mean_variance_k
             }
         }
 
-        size_t data_step =
-            (isa == cpu::x64::sse41 && jcp_.layout == MVNLayoutType::mvn_block) ? vector_step * 2 : vector_step;
+        size_t data_step = vector_step;
         src_stride = data_step * jcp_.src_data_size;
 
         load_pool_gpr_idxs = {static_cast<size_t>(reg_load_store_mask.getIdx()),
@@ -234,8 +233,7 @@ struct jit_uni_mvn_mean_variance_kernel_f32 : public jit_uni_mvn_mean_variance_k
     }
 
 private:
-    using Vmm =
-        typename conditional3<isa == cpu::x64::sse41, Xbyak::Xmm, isa == cpu::x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    using Vmm = typename conditional<isa == cpu::x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
 
     const int vlen = cpu_isa_traits_t<isa>::vlen;
     const int vector_step = vlen / sizeof(float);
@@ -600,8 +598,7 @@ private:
         Xbyak::Reg64 reg_work_amount_bk = rdi;
         mov(reg_src_bk, reg_src);
         mov(reg_work_amount_bk, reg_work_amount);
-        int repeats =
-            (isa == cpu::x64::sse41) ? 2 : 1;  // block size is also 8 on cpu::x64::sse41 with two step process
+        int repeats = 1;
 
         auto reset_with_offset = [&](int offset) {
             add(reg_src_bk, offset * jcp_.src_data_size);
@@ -692,11 +689,6 @@ private:
             L(label_tails);
             {
                 Xbyak::Label label_sse_full_size;
-                if (isa == cpu::x64::sse41) {
-                    // on sse, first 4 could be done with vector manner
-                    cmp(reg_rt_shape, 4);
-                    jae(label_sse_full_size, T_NEAR);
-                }
 
                 worker_tails_unroll();
                 // exit directly if tails is done, for all platforms
@@ -898,11 +890,7 @@ private:
             uni_vsubps(vmm_val, vmm_val, vmm_mean);
             if (is_zero_pad) {
                 uni_vpxor(vmm_zero, vmm_zero, vmm_zero);
-                if (isa == cpu::x64::sse41) {
-                    uint8 imm = 1;
-                    imm = ~((imm << block_num) - imm);
-                    blendps(vmm_val, vmm_zero, imm);
-                } else if (isa == cpu::x64::avx2) {
+                if (isa == cpu::x64::avx2) {
                     uint8 imm = 1;
                     imm = ~((imm << block_num) - imm);
                     vblendps(vmm_val, vmm_val, vmm_zero, imm);
@@ -937,9 +925,7 @@ private:
     }
 
     void reduce_sum_store_vmm(int vmm_idx) {
-        if (isa == cpu::x64::sse41) {
-            reduce_sum_store_xmm(Xmm(vmm_idx));
-        } else if (isa == cpu::x64::avx2) {
+        if (isa == cpu::x64::avx2) {
             auto ymm_sum = Xbyak::Ymm(vmm_idx);
             vextractf128(xmm_aux1, ymm_sum, 0);
             vextractf128(xmm_aux2, ymm_sum, 1);
@@ -1069,8 +1055,7 @@ struct jit_uni_mvn_kernel_f32 : public jit_uni_mvn_kernel, public jit_generator_
         mov(reg_rt_shape, ptr[reg_params + GET_OFF(rt_shape_size)]);
         mov(reg_oc_off, ptr[reg_params + GET_OFF(oc_off)]);
 
-        size_t data_step =
-            (isa == cpu::x64::sse41 && jcp_.layout == MVNLayoutType::mvn_block) ? vector_step * 2 : vector_step;
+        size_t data_step = vector_step;
         src_stride = data_step * jcp_.src_data_size;
         dst_stride = data_step * jcp_.dst_data_size;
 
@@ -1127,8 +1112,7 @@ struct jit_uni_mvn_kernel_f32 : public jit_uni_mvn_kernel, public jit_generator_
     }
 
 private:
-    using Vmm =
-        typename conditional3<isa == cpu::x64::sse41, Xbyak::Xmm, isa == cpu::x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    using Vmm = typename conditional<isa == cpu::x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
 
     const int vlen = cpu_isa_traits_t<isa>::vlen;
     const int vector_step = vlen / sizeof(float);
@@ -1228,7 +1212,7 @@ private:
         // cover vector and tails on avx512, avx2
         // cover on sse, 2 part vector, first part vector and second part tails, first part tails
         Xbyak::Label label_exit;
-        int repeats = (isa == cpu::x64::sse41) ? 2 : 1;
+        int repeats = 1;
         for (int i = 0; i < repeats; i++) {
             if (i > 0) {
                 reset_with_offset(4);
@@ -1245,11 +1229,6 @@ private:
             L(label_tails);
             {
                 Xbyak::Label label_sse_full_size;
-                if (isa == cpu::x64::sse41) {
-                    // on sse, first 4 could be done with vector manner
-                    cmp(reg_rt_shape, 4);
-                    jae(label_sse_full_size, T_NEAR);
-                }
 
                 worker_tails_unroll();
                 // exit directly if tails is done, for all platforms
@@ -2168,14 +2147,6 @@ MVN::MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, [[maybe_unused]] c
         if (mvnAttrs.normalizeVariance_) {
             jcp.normalize_variance = true;
             mvn_variance_kernel = std::make_shared<jit_uni_mvn_mean_variance_kernel_f32<cpu::x64::avx2>>(jcp);
-        }
-    } else if (ov::with_cpu_x86_sse42()) {
-        mvn_kernel = std::make_shared<jit_uni_mvn_kernel_f32<cpu::x64::sse41>>(jcp, *attr.get());
-        jcp.normalize_variance = false;
-        mvn_mean_kernel = std::make_shared<jit_uni_mvn_mean_variance_kernel_f32<cpu::x64::sse41>>(jcp);
-        if (mvnAttrs.normalizeVariance_) {
-            jcp.normalize_variance = true;
-            mvn_variance_kernel = std::make_shared<jit_uni_mvn_mean_variance_kernel_f32<cpu::x64::sse41>>(jcp);
         }
     } else {
         OPENVINO_THROW("Can't create jit MVN kernel");

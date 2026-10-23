@@ -111,8 +111,6 @@ namespace {
 float get_isa_threshold_multiplier(dnnl::cpu_isa isa) {
     using namespace ThreadPreferenceConstants;
     switch (isa) {
-    case dnnl::cpu_isa::sse41:
-        return ISA_THRESHOLD_SSE41;
     case dnnl::cpu_isa::avx2:
     case dnnl::cpu_isa::avx512_core:
         return ISA_THRESHOLD_AVX2;

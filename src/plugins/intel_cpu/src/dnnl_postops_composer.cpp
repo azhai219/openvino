@@ -861,6 +861,7 @@ void DnnlPostOpsComposer::appendDecompressionZeroPointsLegacy(const MemoryCPtr& 
     dnnlArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zeroPointsMem->getPrimitive();
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static) -- Restored implementation will configure attr.
 void DnnlPostOpsComposer::setDynamicQuantizationParams([[maybe_unused]] uint64_t groupSize) {
     // TODO: Port source dynamic quantization to the current oneDNN API.
 #pragma message("TODO: oneDNN source dynamic quantization configuration is not implemented")

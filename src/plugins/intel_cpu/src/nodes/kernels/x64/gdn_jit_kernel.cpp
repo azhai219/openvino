@@ -574,7 +574,7 @@ void jit_gdn_kernel<isa>::generate() {
     // For qk_head_size <= 128: register-resident Q/K/H
     // For qk_head_size > 128: use temp buffers
 
-    auto exp_injector = std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+    auto exp_injector = std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                           dnnl::impl::alg_kind::eltwise_exp,
                                                                           0.F,
                                                                           0.F,

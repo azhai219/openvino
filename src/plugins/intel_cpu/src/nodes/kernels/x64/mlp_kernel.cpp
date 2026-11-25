@@ -589,7 +589,7 @@ void GateUpCombine::generate() {
     const auto zmm_up = zmm0;
     const auto ymm_dst = ymm5;
 
-    auto injector = std::make_shared<jit_uni_eltwise_injector_t<dnnl::impl::cpu::x64::avx512_core>>(
+    auto injector = std::make_shared<jit_uni_eltwise_injector_t<Xbyak::Zmm>>(
         this,
         m_act_alg,
         1.F,

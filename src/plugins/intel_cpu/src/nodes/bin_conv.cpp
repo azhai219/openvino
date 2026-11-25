@@ -81,7 +81,7 @@ struct jit_uni_bin_conv_kernel_f32 : public jit_uni_bin_conv_kernel, public jit_
                                          jit_dw_conv_params jcp_dw_conv,
                                          const dnnl_primitive_attr& attr)
         : jit_uni_bin_conv_kernel(jcp, jcp_dw_conv, attr),
-          jit_generator_t(jit_name()) {}
+          jit_generator_t(jit_name(), isa) {}
 
     void create_ker() override {
         jit_generator_t::create_kernel();
@@ -94,7 +94,7 @@ struct jit_uni_bin_conv_kernel_f32 : public jit_uni_bin_conv_kernel, public jit_
         for (int i = 0; i < end_idx; i++) {
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                                               post_op.eltwise,
                                                                                               data_type::f32,
                                                                                               true,
@@ -249,8 +249,8 @@ private:
 
     Xbyak::Label l_table;
 
-    nstl::vector<std::shared_ptr<jit_uni_eltwise_injector_t<isa>>> eltwise_injectors;
-    nstl::vector<std::shared_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>>> eltwise_injectors;
+    std::vector<std::shared_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
 
     void cvt2ps(dnnl::memory::data_type type_in, Vmm vmm_in, const Xbyak::Operand& op, bool scalar_load) {
         auto xmm_in = Xmm(vmm_in.getIdx());

@@ -508,7 +508,7 @@ public:
     const bool m_to_f16;
 
     GateUpCombine(dnnl_alg_kind_t act_alg, bool to_f16)
-        : jit_generator_t(jit_name()),
+        : jit_generator_t(jit_name(), dnnl::impl::cpu::x64::avx512_core),
           m_act_alg(act_alg),
           m_to_f16(to_f16) {
         create_kernel();

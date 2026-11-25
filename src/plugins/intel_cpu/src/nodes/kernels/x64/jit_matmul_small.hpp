@@ -10,6 +10,7 @@
 #include <common/utils.hpp>
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 #include "cpu/x64/cpu_isa_traits.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
@@ -65,7 +66,7 @@ struct jit_uni_matmul_small_kernel_f32 : public jit_uni_matmul_small_kernel,
 
     explicit jit_uni_matmul_small_kernel_f32(jit_matmul_small_config_params jcp, const dnnl_primitive_attr& attr)
         : jit_uni_matmul_small_kernel(jcp, attr),
-          jit_generator_t(jit_name()) {}
+          jit_generator_t(jit_name(), isa) {}
 
     void create_ker() override {
         jit_generator_t::create_kernel();
@@ -98,7 +99,7 @@ private:
     Vmm vmm_d_weights = Vmm(12);
     Vmm vmm_d_bias = Vmm(13);
 
-    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<isa>>> eltwise_injectors;
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>>> eltwise_injectors;
     std::vector<std::shared_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
     std::vector<std::shared_ptr<jit_uni_quantization_injector_f32<isa>>> quantization_injectors;
 };

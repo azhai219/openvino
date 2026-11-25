@@ -186,7 +186,7 @@ struct jit_uni_reduce_kernel_f32 : public jit_uni_reduce_kernel, public jit_gene
 
     explicit jit_uni_reduce_kernel_f32(jit_reduce_config_params jcp)
         : jit_uni_reduce_kernel(jcp),
-          jit_generator_t(jit_name()) {}
+          jit_generator_t(jit_name(), isa) {}
 
     void create_ker() override {
         jit_generator_t::create_kernel();
@@ -195,7 +195,7 @@ struct jit_uni_reduce_kernel_f32 : public jit_uni_reduce_kernel, public jit_gene
 
     void generate() override {
         if (jcp_.reduce_mode == Algorithm::ReduceLogSumExp) {
-            exp_injector = std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+            exp_injector = std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                              alg_kind::eltwise_exp,
                                                                              0.F,
                                                                              0.F,
@@ -300,7 +300,7 @@ private:
     Xbyak::Label l_table;
 
     std::shared_ptr<jit_uni_vcvtneps2bf16> uni_vcvtneps2bf16;
-    std::shared_ptr<jit_uni_eltwise_injector_t<isa>> exp_injector;
+    std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>> exp_injector;
 
     void reduce_main() {
         // ================================================================
@@ -1223,7 +1223,7 @@ struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, publi
 
     explicit jit_uni_reduce_post_kernel_f32(jit_reduce_config_params jcp, const dnnl_primitive_attr& attr)
         : jit_uni_reduce_post_kernel(jcp, attr),
-          jit_generator_t(jit_name()) {}
+          jit_generator_t(jit_name(), isa) {}
 
     void create_ker() override {
         jit_generator_t::create_kernel();
@@ -1235,7 +1235,7 @@ struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, publi
         for (int i = 0; i < p.len(); i++) {
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                                               post_op.eltwise.alg,
                                                                                               post_op.eltwise.alpha,
                                                                                               post_op.eltwise.beta,
@@ -1254,7 +1254,7 @@ struct jit_uni_reduce_post_kernel_f32 : public jit_uni_reduce_post_kernel, publi
         }
 
         if (jcp_.reduce_mode == Algorithm::ReduceLogSum || jcp_.reduce_mode == Algorithm::ReduceLogSumExp) {
-            log_injector = std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+            log_injector = std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                              alg_kind::eltwise_log,
                                                                              0.F,
                                                                              0.F,
@@ -1371,9 +1371,9 @@ private:
     Vmm vmm_d_bias = Vmm(8);
 
     std::shared_ptr<jit_uni_vcvtneps2bf16> uni_vcvtneps2bf16;
-    std::shared_ptr<jit_uni_eltwise_injector_t<isa>> log_injector;
+    std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>> log_injector;
 
-    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<isa>>> eltwise_injectors;
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>>> eltwise_injectors;
     std::vector<std::shared_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
     std::vector<std::shared_ptr<jit_uni_quantization_injector_f32<isa>>> quantization_injectors;
 

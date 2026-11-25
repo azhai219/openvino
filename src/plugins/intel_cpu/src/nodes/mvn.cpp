@@ -974,7 +974,7 @@ struct jit_uni_mvn_kernel_f32 : public jit_uni_mvn_kernel, public jit_generator_
 
     explicit jit_uni_mvn_kernel_f32(jit_mvn_config_params jcp, const dnnl_primitive_attr& attr)
         : jit_uni_mvn_kernel(jcp, attr),
-          jit_generator_t(jit_name()) {
+          jit_generator_t(jit_name(), isa) {
         const auto& p = attr_.post_ops_;
         bool opt_scaleshift_applicable =
             jcp_.layout == MVNLayoutType::mvn_by_channel && isa == cpu::x64::avx512_core && !jcp_.across_channels;
@@ -1003,7 +1003,7 @@ struct jit_uni_mvn_kernel_f32 : public jit_uni_mvn_kernel, public jit_generator_
         for (int i = 0; i < p.len(); i++) {
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
+                eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<Vmm>>(this,
                                                                                               post_op.eltwise.alg,
                                                                                               post_op.eltwise.alpha,
                                                                                               post_op.eltwise.beta,
@@ -1153,7 +1153,7 @@ private:
 
     const int tile_size[kTileNum] = {8, 4, 2, 1};
 
-    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<isa>>> eltwise_injectors;
+    std::vector<std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>>> eltwise_injectors;
     std::vector<std::shared_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
     std::vector<std::shared_ptr<jit_uni_quantization_injector_f32<isa>>> quantization_injectors;
 

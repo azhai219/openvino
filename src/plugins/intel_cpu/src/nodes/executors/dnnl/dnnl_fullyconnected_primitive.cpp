@@ -361,9 +361,12 @@ static dnnl::inner_product_forward::primitive_desc createDescriptorInternal(cons
         wdt = memory::data_type::s8;
     }
 
-    const dnnl::memory::desc weightsDesc =
-        useSparseWeights ? dnnl::memory::desc::packed_v0(normalizedWeightDesc.get_dims(), wdt)
-                         : dnnl::memory::desc(normalizedWeightDesc.get_dims(), wdt, memory::format_tag::any);
+    if (useSparseWeights) {
+        // TODO: Port packed sparse weights descriptors to the current oneDNN API.
+#pragma message("TODO: oneDNN packed sparse weights descriptors are not implemented")
+        OPENVINO_THROW_NOT_IMPLEMENTED("oneDNN packed sparse weights descriptors are not implemented");
+    }
+    const dnnl::memory::desc weightsDesc(normalizedWeightDesc.get_dims(), wdt, memory::format_tag::any);
 
     return {engine,
             dnnl::prop_kind::forward_inference,

@@ -4,7 +4,7 @@
 
 #include "reorder_prim.h"
 
-#include <common/primitive_hashing.hpp>
+#include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>
 #include <oneapi/dnnl/dnnl.hpp>

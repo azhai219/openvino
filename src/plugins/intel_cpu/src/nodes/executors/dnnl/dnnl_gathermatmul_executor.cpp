@@ -7,7 +7,6 @@
 #include <oneapi/dnnl/dnnl_common_types.h>
 #include <oneapi/dnnl/dnnl_types.h>
 
-#include <common/primitive_hashing.hpp>
 #include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>
@@ -165,7 +164,9 @@ public:
         }
 
         if (key.src_dyn_quant_group_size > 0) {
-            m_attr.set_src_dyn_quant_params(key.src_dyn_quant_group_size);
+            // TODO: Port source dynamic quantization to the current oneDNN API.
+#pragma message("TODO: GatherMatmul oneDNN source dynamic quantization is not implemented")
+            OPENVINO_THROW_NOT_IMPLEMENTED("GatherMatmul oneDNN source dynamic quantization is not implemented");
         }
 
         m_input_md = src_md;
@@ -237,13 +238,17 @@ private:
     void init_w_scales(const VectorDims& scale_shape) {
         constexpr auto data_type = dnnl::memory::data_type::f32;
         const auto scale_dims = DnnlExtensionUtils::convertToDnnlDims(scale_shape);
-        m_attr.set_scales_dims(DNNL_ARG_WEIGHTS, scale_dims, data_type);
+        // TODO: Port weight scales configuration to the current oneDNN API.
+#pragma message("TODO: GatherMatmul oneDNN weight scales configuration is not implemented")
+        OPENVINO_THROW_NOT_IMPLEMENTED("GatherMatmul oneDNN weight scales configuration is not implemented");
         m_scale_md = dnnl::memory::desc(scale_dims, data_type, dnnl::memory::format_tag::ba);
     }
 
     void init_w_zp(const VectorDims& zp_shape, dnnl::memory::data_type data_type) {
         const auto zp_dims = DnnlExtensionUtils::convertToDnnlDims(zp_shape);
-        m_attr.set_zero_points_dims(DNNL_ARG_WEIGHTS, zp_dims, data_type);
+        // TODO: Port weight zero points configuration to the current oneDNN API.
+#pragma message("TODO: GatherMatmul oneDNN weight zero points configuration is not implemented")
+        OPENVINO_THROW_NOT_IMPLEMENTED("GatherMatmul oneDNN weight zero points configuration is not implemented");
         m_zp_md = dnnl::memory::desc(zp_dims, data_type, dnnl::memory::format_tag::ba);
     }
 

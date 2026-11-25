@@ -63,7 +63,7 @@ struct jit_uni_logistic_kernel_f32 : public jit_uni_logistic_kernel, public jit_
 
     explicit jit_uni_logistic_kernel_f32(jit_logistic_config_params jcp)
         : jit_uni_logistic_kernel(),
-          jit_generator_t(jit_name()),
+          jit_generator_t(jit_name(), isa),
           jcp_(jcp) {}
 
     void create_ker() override {
@@ -72,7 +72,7 @@ struct jit_uni_logistic_kernel_f32 : public jit_uni_logistic_kernel, public jit_
     }
 
     void generate() override {
-        exp_injector.reset(new jit_uni_eltwise_injector_t<isa>(this,
+        exp_injector.reset(new jit_uni_eltwise_injector_t<Vmm>(this,
                                                                dnnl::impl::alg_kind::eltwise_exp,
                                                                0.F,
                                                                0.F,
@@ -167,7 +167,7 @@ private:
 
     Xbyak::Label l_table;
 
-    std::shared_ptr<jit_uni_eltwise_injector_t<isa>> exp_injector;
+    std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>> exp_injector;
 
     jit_logistic_config_params jcp_;
 

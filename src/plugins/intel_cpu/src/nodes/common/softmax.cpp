@@ -74,7 +74,7 @@ struct jit_uni_softmax_kernel_f32 : public jit_uni_softmax_kernel, public jit_ge
 
     explicit jit_uni_softmax_kernel_f32(jit_softmax_config_params jcp)
         : jit_uni_softmax_kernel(),
-          jit_generator_t(jit_name()),
+                    jit_generator_t(jit_name(), isa),
           jcp_(jcp) {}
 
     void create_ker() override {
@@ -83,7 +83,7 @@ struct jit_uni_softmax_kernel_f32 : public jit_uni_softmax_kernel, public jit_ge
     }
 
     void generate() override {
-        exp_injector.reset(new jit_uni_eltwise_injector_t<isa>(this,
+        exp_injector.reset(new jit_uni_eltwise_injector_t<Vmm>(this,
                                                                dnnl::impl::alg_kind::eltwise_exp,
                                                                0.F,
                                                                0.F,
@@ -219,7 +219,7 @@ private:
 
     std::unique_ptr<jit_uni_vcvtneps2bf16> uni_vcvtneps2bf16;
 
-    std::shared_ptr<jit_uni_eltwise_injector_t<isa>> exp_injector;
+    std::shared_ptr<jit_uni_eltwise_injector_t<Vmm>> exp_injector;
 
     jit_softmax_config_params jcp_;
 

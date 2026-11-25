@@ -10,7 +10,6 @@
 #include <cassert>
 #include <common/c_types_map.hpp>
 #include <common/primitive_attr.hpp>
-#include <common/primitive_hashing.hpp>
 #include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>

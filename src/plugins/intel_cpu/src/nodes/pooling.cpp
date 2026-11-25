@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "common/primitive_attr.hpp"
-#include "common/primitive_hashing.hpp"
 #include "common/primitive_hashing_utils.hpp"
 #include "cpu_memory.h"
 #include "cpu_types.h"

@@ -8,7 +8,7 @@
 
 #include <cassert>
 #include <common/primitive_attr.hpp>
-#include <common/primitive_hashing.hpp>
+#include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -346,7 +346,9 @@ static dnnl::inner_product_forward::primitive_desc createDescriptorInternal(cons
 
         // dynamic quantization with symmetric quantized weights needs unsigned weights
         uint64_t dynQuantGroupSize = 0;
-        attr.get_src_dyn_quant_params(dynQuantGroupSize);
+        // TODO: Port source dynamic quantization parameter retrieval to the current oneDNN API.
+    #pragma message("TODO: oneDNN source dynamic quantization parameter retrieval is not implemented")
+        OPENVINO_THROW_NOT_IMPLEMENTED("oneDNN source dynamic quantization parameter retrieval is not implemented");
         if (dynQuantGroupSize > 0) {
             if (wdt == dnnl::memory::data_type::s8) {
                 wdt = memory::data_type::u8;

@@ -838,9 +838,9 @@ void DnnlPostOpsComposer::appendDecompressionScalesLegacy(const MemoryCPtr& scal
     }
 
     auto scalesMem = prepackDecompressionParams(scales_ptr, needTranspose, dstPrecision, engine);
-    attr.set_scales_dims(DNNL_ARG_WEIGHTS,
-                         DnnlExtensionUtils::convertToDnnlDims(scalesMem->getStaticDims()),
-                         DnnlExtensionUtils::ElementTypeToDataType(dstPrecision));
+    // TODO: Port legacy decompression scales configuration to the current oneDNN API.
+#pragma message("TODO: oneDNN legacy decompression scales configuration is not implemented")
+    OPENVINO_THROW_NOT_IMPLEMENTED("oneDNN legacy decompression scales configuration is not implemented");
     cpuArgs[DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS] = std::move(scalesMem);
     dnnlArgs[DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS] =
         cpuArgs[DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS]->getPrimitive();
@@ -854,15 +854,17 @@ void DnnlPostOpsComposer::appendDecompressionZeroPointsLegacy(const MemoryCPtr& 
     }
 
     auto zeroPointsMem = prepackDecompressionParams(zero_points_ptr, needTranspose, dstPrecision, engine);
-    attr.set_zero_points_dims(DNNL_ARG_WEIGHTS,
-                              DnnlExtensionUtils::convertToDnnlDims(zeroPointsMem->getStaticDims()),
-                              DnnlExtensionUtils::ElementTypeToDataType(dstPrecision));
+    // TODO: Port legacy decompression zero points configuration to the current oneDNN API.
+#pragma message("TODO: oneDNN legacy decompression zero points configuration is not implemented")
+    OPENVINO_THROW_NOT_IMPLEMENTED("oneDNN legacy decompression zero points configuration is not implemented");
     cpuArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zeroPointsMem;
     dnnlArgs[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS] = zeroPointsMem->getPrimitive();
 }
 
-void DnnlPostOpsComposer::setDynamicQuantizationParams(uint64_t groupSize) {
-    attr.set_src_dyn_quant_params(groupSize);
+void DnnlPostOpsComposer::setDynamicQuantizationParams([[maybe_unused]] uint64_t groupSize) {
+    // TODO: Port source dynamic quantization to the current oneDNN API.
+#pragma message("TODO: oneDNN source dynamic quantization configuration is not implemented")
+    OPENVINO_THROW_NOT_IMPLEMENTED("oneDNN source dynamic quantization configuration is not implemented");
 }
 
 void DnnlPostOpsComposer::appendAttrPostOpsLegacy(const ActivationPostOp& postOp) {
